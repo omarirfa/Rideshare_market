@@ -1,0 +1,81 @@
+[project]
+name = "nyc-airport-ride-hail"
+version = "0.1.0"
+description = "Every high-volume for-hire trip touching JFK, LaGuardia or Newark, February 2019 onward."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+keywords = ["marimo", "polars", "altair", "nyc", "tlc", "ride-hail"]
+
+dependencies = [
+    "marimo>=0.24",
+    "polars>=1.0",
+    "altair>=5.0",
+    "pyarrow>=15.0",
+    "pygwalker>=0.5",
+    "requests>=2.31",
+    "orjson>=3.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.16",
+    "pre-commit>=3.5",
+]
+
+[project.urls]
+"Trip records" = "https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page"
+"Data dictionary" = "https://www.nyc.gov/assets/tlc/downloads/pdf/data_dictionary_trip_records_hvfhs.pdf"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# DOC (pydoclint) is preview-only; explicit-preview-rules keeps every *other*
+# unstable rule off, so upgrading ruff cannot silently add new failures.
+preview = true
+explicit-preview-rules = true
+select = [
+    "E",       # pycodestyle
+    "F",       # pyflakes
+    "W",       # warnings
+    "I",       # import order
+    "UP",      # pyupgrade
+    "B",       # bugbear
+    "SIM",     # simplify
+    "D",       # pydocstyle: Google convention, configured below
+    "DOC201",  # documented Returns must exist
+    "DOC402",  # documented Yields must exist
+    "DOC501",  # raised exceptions must be documented
+    "ERA",     # commented-out code
+    "RUF",
+]
+ignore = [
+    "undocumented-public-init",       # the class docstring covers __init__
+    "incorrect-blank-line-before-class",
+    "multi-line-summary-second-line",
+    "line-too-long",                  # the formatter owns line length
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+# marimo cells are anonymous `def _(...)` wrappers, not API surface.
+ignore-decorators = ["app.cell", "app.function", "app.class_definition"]
+
+[tool.ruff.lint.per-file-ignores]
+# A marimo notebook has no module docstring slot, displays a cell's last
+# expression as its output, marks cell-private names with a leading underscore,
+# and carries prose containing en dashes and multiplication signs.
+"nyc_airports.py" = [
+    "undocumented-public-module",
+    "useless-expression",
+    "used-dummy-variable",
+    "ambiguous-unicode-character-string",
+    "ambiguous-unicode-character-docstring",
+    "ambiguous-unicode-character-comment",
+]
+"tools/*.py" = ["undocumented-public-module"]
+
+[tool.ruff.format]
+docstring-code-format = true
