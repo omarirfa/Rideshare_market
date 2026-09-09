@@ -5,7 +5,6 @@ __pycache__/
 *.py[cod]
 
 # The data tree the notebook builds. Peak size is about 3.2 GB.
-data/processed
 data/cache
 !data/.gitkeep
 
