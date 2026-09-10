@@ -5,6 +5,8 @@ Anyone who wants to know how the airport ride-hail market in New York City (NYC)
 One marimo notebook holds the whole pipeline: the download, the transform, the
 storage layer, the analysis and the conclusions.
 
+You can see the static html site here: https://nyc-rideshare-static.omar-irfan.workers.dev/
+
 ## What the data says
 
 - **Riders pay more, drivers keep less.** The median airport fare rose 52.1%
