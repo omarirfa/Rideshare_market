@@ -1,8 +1,67 @@
-.venv
-# Lint and format caches
-.ruff_cache/
+# ── Python ───────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ── Environments ─────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+ENV/
+env/
+
+# ── Tooling caches ───────────────────────────────────────────────────────────
+.ruff_cache/
+.mypy_cache/
+.pytype/
+.pyright/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.cache/
+
+# ── uv ───────────────────────────────────────────────────────────────────────
+# uv.lock is committed on purpose - the uv-lock hook keeps it in sync.
+
+# ── Editors / OS ─────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Notebooks ────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ── Logs and local data ──────────────────────────────────────────────────────
+*.log
+logs/
+*.sqlite3
+*.db
 
 # The data tree the notebook builds. Peak size is about 3.2 GB.
 data/cache

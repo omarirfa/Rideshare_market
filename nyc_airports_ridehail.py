@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.11"
+# requires-python = ">=3.12"
 # dependencies = [
 #     "marimo",
 #     "polars>=1.0",
@@ -10,6 +10,18 @@
 #     "orjson",
 # ]
 # ///
+"""Every high-volume for-hire trip that touches JFK, LGA or EWR.
+
+The notebook downloads the monthly trip records of the New York City Taxi and
+Limousine Commission. It keeps the rows that touch one of the three airports,
+then writes six aggregate tables. The sections after the extraction analyse the
+same data before and after cleaning. The difference between the two is the
+argument for the cleaning.
+"""
+
+# A marimo notebook holds each constant and each output inside a cell function.
+# These six rules read that structure as a fault, so they are off for this file.
+# ruff: noqa: B018, C901, N803, N806, PLC0415, PLR0917
 
 import marimo
 
@@ -21,11 +33,12 @@ with app.setup:
     import os
     import re
     import time
-    from collections.abc import Callable, Iterator
+    from collections.abc import Callable, Generator
     from contextlib import contextmanager
     from dataclasses import dataclass
     from datetime import UTC, datetime
     from pathlib import Path
+    from typing import Any, Protocol, cast, override
 
     import altair as alt
     import marimo as mo
@@ -42,9 +55,36 @@ with app.setup:
     logging.Formatter.converter = time.localtime
     log = logging.getLogger("airports")
 
+    Rows = list[tuple[str, str, str]]
+
+    class MarkedTable(Protocol):
+        """Call signature of the table renderer that section 1.1 defines."""
+
+        def __call__(
+            self,
+            df: pl.DataFrame,
+            mark: Callable[[int, str], str],
+            *,
+            justify: dict[str, Any] | None = None,
+            bold_columns: tuple[str, ...] = (),
+        ) -> Any:
+            """Render one table with a tint on the cells that the data marks.
+
+            Args:
+                df: The frame to show, already formatted for display.
+                mark: Takes the row index and the column name, and gives a tint
+                    key or an empty string.
+                justify: Column name to one of left, center or right.
+                bold_columns: Columns to set in a heavier weight.
+
+            Returns:
+                The table.
+            """
+            ...
+
 
 @app.cell
-def _():
+def _() -> tuple[Rows, Rows, Rows, Rows]:
     SECTIONS = [
         ("0", "Extraction: fetch, transform, store, build, run", "0 · Extraction"),
         ("1", "Helpers: loading, charts and derivations", "1 · Helpers"),
@@ -98,14 +138,22 @@ def _():
         ),
     ]
     TOOLS = [
-        ("marimo", "https://docs.marimo.io", "The reactive notebook this file runs in."),
+        (
+            "marimo",
+            "https://docs.marimo.io",
+            "The reactive notebook this file runs in.",
+        ),
         ("Polars", "https://docs.pola.rs", "Every scan, filter and aggregate."),
         (
             "Vega-Altair",
             "https://altair-viz.github.io",
             "Every chart, through one registered theme.",
         ),
-        ("PyGWalker", "https://kanaries.net/pygwalker", "The drag-and-drop view in §5.2."),
+        (
+            "PyGWalker",
+            "https://kanaries.net/pygwalker",
+            "The drag-and-drop view in §5.2.",
+        ),
         (
             "Apache Parquet",
             "https://parquet.apache.org",
@@ -126,26 +174,34 @@ def _():
         (
             "EWR",
             "Newark Liberty International Airport, in Newark, New Jersey",
-            "A different state. A New York licence can set down there but cannot "
-            "collect a dispatched fare.",
+            (
+                "A different state. A New York licence can set down there but cannot "
+                "collect a dispatched fare."
+            ),
         ),
         (
             "TLC",
             "New York City Taxi and Limousine Commission",
-            "The regulator. It licenses the platforms, sets the minimum pay standard "
-            "and publishes the trip records this notebook reads.",
+            (
+                "The regulator. It licenses the platforms, sets the minimum pay standard "
+                "and publishes the trip records this notebook reads."
+            ),
         ),
         (
             "FHV",
             "for-hire vehicle",
-            "Any licensed vehicle that carries a passenger for a fare and is not a "
-            "yellow or green taxi.",
+            (
+                "Any licensed vehicle that carries a passenger for a fare and is not a "
+                "yellow or green taxi."
+            ),
         ),
         (
             "HVFHV",
             "high-volume for-hire vehicle",
-            "The licence class for a service that dispatches more than 10,000 trips a "
-            "day. Only a few companies qualify, which is why the market is small.",
+            (
+                "The licence class for a service that dispatches more than 10,000 trips a "
+                "day. Only a few companies qualify, which is why the market is small."
+            ),
         ),
         (
             "NYC",
@@ -155,8 +211,10 @@ def _():
         (
             "CBD",
             "central business district",
-            "Manhattan below 60th Street. A trip that enters it pays the congestion "
-            "fee that appears from January 2025.",
+            (
+                "Manhattan below 60th Street. A trip that enters it pays the congestion "
+                "fee that appears from January 2025."
+            ),
         ),
         (
             "WAV",
@@ -166,8 +224,10 @@ def _():
         (
             "HHI",
             "Herfindahl-Hirschman index",
-            "The sum of squared percentage shares. 10,000 is one platform taking "
-            "every trip, and 2,500 is the threshold for a highly concentrated market.",
+            (
+                "The sum of squared percentage shares. 10,000 is one platform taking "
+                "every trip, and 2,500 is the threshold for a highly concentrated market."
+            ),
         ),
         (
             "CDN",
@@ -177,15 +237,26 @@ def _():
         (
             "pp",
             "percentage points",
-            "The unit for a difference between two shares. A move from 63% to 65% is "
-            "two percentage points, not two percent.",
+            (
+                "The unit for a difference between two shares. A move from 63% to 65% is "
+                "two percentage points, not two percent."
+            ),
         ),
     ]
     return GLOSSARY, SECTIONS, SOURCES, TOOLS
 
 
 @app.cell(hide_code=True)
-def _(GLOSSARY, SECTIONS, SOURCES, TOOLS, contents_list, gloss, glossary_list, link_list):
+def _(
+    GLOSSARY: Rows,
+    SECTIONS: Rows,
+    SOURCES: Rows,
+    TOOLS: Rows,
+    contents_list: Callable[..., mo.Html],
+    gloss: Callable[..., str],
+    glossary_list: Callable[..., mo.Html],
+    link_list: Callable[..., mo.Html],
+) -> None:
     mo.vstack(
         [
             mo.md("# NYC airport ride-hail"),
@@ -208,11 +279,10 @@ def _(GLOSSARY, SECTIONS, SOURCES, TOOLS, contents_list, gloss, glossary_list, l
         ],
         gap=0.9,
     )
-    return
 
 
 @app.cell(hide_code=True)
-def _(gloss):
+def _(gloss: Callable[..., str]) -> None:
     mo.md(
         gloss(r"""
     Sections 3 and 5 analyse the *same* data before and after cleaning. The
@@ -229,11 +299,10 @@ def _(gloss):
     dispatched pickup. Any comparison that treats it as a third market is wrong.
     """)
     )
-    return
 
 
 @app.cell(hide_code=True)
-def _(contents_list, gloss):
+def _(contents_list: Callable[..., mo.Html], gloss: Callable[..., str]) -> None:
     mo.vstack(
         [
             mo.md("## 0 · Extraction"),
@@ -248,7 +317,11 @@ def _(contents_list, gloss):
             contents_list(
                 [
                     ("0.1", "Setup: imports and logging", "0.1 Setup"),
-                    ("0.2", "Scope and schema: domain constants", "0.2 Scope and schema"),
+                    (
+                        "0.2",
+                        "Scope and schema: domain constants",
+                        "0.2 Scope and schema",
+                    ),
                     ("0.3", "Where it goes: <code>Paths</code>", "0.3 Where it goes"),
                     ("0.4", "Calendar: year and month arithmetic", "0.4 Calendar"),
                     ("0.5", "Fetch: one month off the CDN", "0.5 Fetch"),
@@ -267,7 +340,11 @@ def _(contents_list, gloss):
                         "Build: <code>build_month</code> and <code>build_archive</code>",
                         "0.8 Build",
                     ),
-                    ("0.9", "Aggregates: the tables the notebook loads", "0.9 Aggregates"),
+                    (
+                        "0.9",
+                        "Aggregates: the tables the notebook loads",
+                        "0.9 Aggregates",
+                    ),
                     ("0.10", "Run", "0.10 Run"),
                 ]
             ),
@@ -310,11 +387,10 @@ def _(contents_list, gloss):
         ],
         gap=0.9,
     )
-    return
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     ### 0.1 Setup
 
@@ -326,11 +402,10 @@ def _():
     `dataclass`. An alias such as `_dataclass` in each cell avoids the marimo
     one-definition rule, but marimo lint MR004 rejects that pattern.
     """)
-    return
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     ### 0.2 Scope and schema
 
@@ -341,11 +416,32 @@ def _():
     contain keeps its raw code as the platform name. No later cell lists the platforms
     by name. The three thresholds below select the live platforms from the data.
     """)
-    return
 
 
 @app.cell
-def _():
+def _() -> tuple[
+    int,
+    tuple[str, ...],
+    dict[int, str],
+    tuple[int, int],
+    float,
+    float,
+    float,
+    float,
+    float,
+    int,
+    list[str],
+    str,
+    list[str],
+    dict[str, type[pl.DataType]],
+    dict[str, str],
+    int,
+    datetime,
+    tuple[int, int],
+    datetime,
+    int,
+    list[str],
+]:
     ARCHIVE_START = (2019, 2)
     SAMPLE_MONTH = (2025, 1)
     AIRPORTS = {132: "JFK", 138: "LGA", 1: "EWR"}
@@ -385,7 +481,7 @@ def _():
         "wav_request_flag",
         "wav_match_flag",
     ]
-    OPTIONAL_COLUMNS = {"cbd_congestion_fee": pl.Float64}
+    OPTIONAL_COLUMNS: dict[str, type[pl.DataType]] = {"cbd_congestion_fee": pl.Float64}
     MONEY_COLS = [
         "trip_miles",
         "base_passenger_fare",
@@ -406,8 +502,8 @@ def _():
     NON_MARKET_DIRECTIONS = ["transfer", "internal"]
 
     MONTH_GRAIN = "1mo"
-    SEASON_FROM = datetime(2022, 1, 1)
-    RECOVERY_BASELINE_MONTH = datetime(2020, 2, 1)
+    SEASON_FROM = datetime(2022, 1, 1)  # noqa: DTZ001
+    RECOVERY_BASELINE_MONTH = datetime(2020, 2, 1)  # noqa: DTZ001
     AGGREGATE_TABLES = (
         "monthly_kpis",
         "market_share",
@@ -442,18 +538,17 @@ def _():
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     ### 0.3 Where it goes
 
     One object owns every path, and the filename templates sit next to the only code
     that formats them. Pointing the pipeline at another disk means overriding one root.
     """)
-    return
 
 
 @app.cell
-def _():
+def _() -> tuple[str, Any]:
     @dataclass(frozen=True)
     class Paths:
         """Every path the pipeline reads or writes, derived from one root.
@@ -466,31 +561,55 @@ def _():
 
         @property
         def raw(self) -> Path:
-            """Untouched monthly parquet, exactly as downloaded."""
+            """Untouched monthly parquet, exactly as downloaded.
+
+            Returns:
+                A path in the data root.
+            """
             return self.root / "raw"
 
         @property
         def cache(self) -> Path:
-            """Conditional-GET headers, one JSON file per month."""
+            """Conditional-GET headers, one JSON file per month.
+
+            Returns:
+                A path in the data root.
+            """
             return self.root / "cache"
 
         @property
         def processed(self) -> Path:
-            """Airport-filtered monthly parquet."""
+            """Airport-filtered monthly parquet.
+
+            Returns:
+                A path in the data root.
+            """
             return self.root / "processed"
 
         @property
         def exports(self) -> Path:
-            """Aggregates the notebook and the site read."""
+            """Aggregates the notebook and the site read.
+
+            Returns:
+                A path in the data root.
+            """
             return self.root / "exports"
 
         @property
         def all(self) -> tuple[Path, ...]:
-            """Every directory, for creation and disk accounting."""
+            """Every directory, for creation and disk accounting.
+
+            Returns:
+                The four directories.
+            """
             return (self.raw, self.cache, self.processed, self.exports)
 
         def raw_file(self, year: int, month: int) -> Path:
             """Give the path of one downloaded monthly file.
+
+            Args:
+                year: Four-digit year.
+                month: Month, 1-indexed.
 
             Returns:
                 A path in the raw directory.
@@ -500,6 +619,10 @@ def _():
         def out_file(self, year: int, month: int) -> Path:
             """Give the path of one filtered monthly slice.
 
+            Args:
+                year: Four-digit year.
+                month: Month, 1-indexed.
+
             Returns:
                 A path in the processed directory.
             """
@@ -508,6 +631,10 @@ def _():
         def header_file(self, year: int, month: int) -> Path:
             """Give the path of one cached response-header file.
 
+            Args:
+                year: Four-digit year.
+                month: Month, 1-indexed.
+
             Returns:
                 A path in the cache directory.
             """
@@ -515,6 +642,10 @@ def _():
 
         def export_file(self, name: str, fmt: str = "parquet") -> Path:
             """Give the path of one exported aggregate table.
+
+            Args:
+                name: Table name, without extension.
+                fmt: File extension to use.
 
             Returns:
                 A path in the exports directory.
@@ -532,17 +663,26 @@ def _():
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     ### 0.4 Calendar
 
     Year-month arithmetic, used by both the fetcher and the build loop.
     """)
-    return
 
 
 @app.cell
-def _():
+def _() -> tuple[
+    Callable[..., tuple[int, int]],
+    Callable[..., tuple[int, int]],
+    Callable[..., list[tuple[int, int]]],
+    Callable[..., tuple[int, int]],
+]:
+    YM_PARTS = 2
+    MONTHS_IN_YEAR = 12
+    FIRST_YEAR = 2019
+    LAST_YEAR = 2100
+
     def month_add(ym: tuple[int, int], n: int) -> tuple[int, int]:
         """Shift a year-month pair by a number of months.
 
@@ -597,15 +737,15 @@ def _():
                 is shown to a person, so it names what was received.
         """
         parts = text.strip().split("-")
-        if len(parts) != 2:
+        if len(parts) != YM_PARTS:
             raise ValueError(f"expected YYYY-MM, got {text.strip()!r}")
         try:
             year, month = int(parts[0]), int(parts[1])
         except ValueError:
             raise ValueError(f"expected YYYY-MM, got {text.strip()!r}") from None
-        if not 1 <= month <= 12:
+        if not 1 <= month <= MONTHS_IN_YEAR:
             raise ValueError(f"month must be 01-12, got {parts[1]!r}")
-        if not 2019 <= year <= 2100:
+        if not FIRST_YEAR <= year <= LAST_YEAR:
             raise ValueError(f"year looks wrong: {parts[0]!r}")
         return year, month
 
@@ -613,18 +753,21 @@ def _():
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     ### 0.5 Fetch
 
     One month off the TLC CDN, with retries, resume and a size check. Nothing here
     knows what an airport is.
     """)
-    return
 
 
 @app.cell
-def _(PATHS, current_month, month_add):
+def _(
+    PATHS: Any,
+    current_month: Callable[..., tuple[int, int]],
+    month_add: Callable[..., tuple[int, int]],
+) -> tuple[Callable[..., Any], Callable[..., tuple[int, int]]]:
     CDN = "https://d37ci6vzurychx.cloudfront.net"
     TRIP_URL = CDN + "/trip-data/fhvhv_tripdata_{year:04d}-{month:02d}.parquet"
     USER_AGENT = os.environ.get(
@@ -638,6 +781,8 @@ def _(PATHS, current_month, month_add):
     DOWNLOAD_RETRIES = 4
     RETRY_BACKOFF_BASE_S = 5
     PUBLICATION_LAG_MONTHS = 2
+    HTTP_NOT_FOUND = 404
+    HTTP_OK = 200
 
     @dataclass
     class FetchResult:
@@ -690,16 +835,23 @@ def _(PATHS, current_month, month_add):
         if dest.exists() and headers_path.exists():
             prior = orjson.loads(headers_path.read_bytes())
             if prior.get("content_length") == dest.stat().st_size:
-                return FetchResult(year, month, dest, False, dest.stat().st_size)
+                return FetchResult(
+                    year, month, dest, downloaded=False, n_bytes=dest.stat().st_size
+                )
 
         tmp = dest.with_suffix(".parquet.part")
         for attempt in range(retries):
             try:
                 with requests.get(
-                    url, headers={"User-Agent": USER_AGENT}, timeout=timeout, stream=True
+                    url,
+                    headers={"User-Agent": USER_AGENT},
+                    timeout=timeout,
+                    stream=True,
                 ) as response:
-                    if response.status_code == 404:
-                        raise FileNotFoundError(f"{year}-{month:02d} not published yet: {url}")
+                    if response.status_code == HTTP_NOT_FOUND:
+                        raise FileNotFoundError(  # noqa: TRY301
+                            f"{year}-{month:02d} not published yet: {url}"
+                        )
                     response.raise_for_status()
                     total = int(response.headers.get("Content-Length") or 0)
                     done = 0
@@ -716,7 +868,9 @@ def _(PATHS, current_month, month_add):
                                 on_progress(done, total)
                     got = tmp.stat().st_size
                     if total and got != total:
-                        raise OSError(f"truncated: got {got:,} of {total:,} bytes")
+                        raise OSError(  # noqa: TRY301
+                            f"truncated: got {got:,} of {total:,} bytes"
+                        )
                     headers_path.write_bytes(
                         orjson.dumps(
                             {
@@ -749,7 +903,9 @@ def _(PATHS, current_month, month_add):
                 time.sleep(wait)
 
         tmp.replace(dest)
-        return FetchResult(year, month, dest, True, dest.stat().st_size)
+        return FetchResult(
+            year, month, dest, downloaded=True, n_bytes=dest.stat().st_size
+        )
 
     def latest_available_month(
         max_lookback: int = 8, timeout: int = PROBE_TIMEOUT_S
@@ -774,7 +930,7 @@ def _(PATHS, current_month, month_add):
                     timeout=timeout,
                     allow_redirects=True,
                 )
-                if response.status_code == 200:
+                if response.status_code == HTTP_OK:
                     return year, month
             except requests.RequestException:
                 fallback = month_add(start, -PUBLICATION_LAG_MONTHS)
@@ -786,7 +942,7 @@ def _(PATHS, current_month, month_add):
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     ### 0.6 Transform
 
@@ -797,18 +953,17 @@ def _():
     `HV0006`. It does not go into a shared `Unknown` row with every other unmapped
     code.
     """)
-    return
 
 
 @app.cell
 def _(
-    AIRPORTS,
-    INCENTIVE_SHARE_THRESHOLD,
-    MIN_VALID_ENGAGED_S,
-    OPTIONAL_COLUMNS,
-    PLATFORMS,
-    TRIP_COLUMNS,
-):
+    AIRPORTS: dict[int, str],
+    INCENTIVE_SHARE_THRESHOLD: float,
+    MIN_VALID_ENGAGED_S: int,
+    OPTIONAL_COLUMNS: dict[str, type[pl.DataType]],
+    PLATFORMS: dict[str, str],
+    TRIP_COLUMNS: list[str],
+) -> tuple[Callable[..., pl.LazyFrame]]:
     def airport_expr(col: str) -> pl.Expr:
         """Map a location id column to an airport code.
 
@@ -845,18 +1000,27 @@ def _(
         have = set(lf.collect_schema().names())
 
         lf = lf.select(
-            [c for c in TRIP_COLUMNS if c in have] + [c for c in OPTIONAL_COLUMNS if c in have]
+            [c for c in TRIP_COLUMNS if c in have]
+            + [c for c in OPTIONAL_COLUMNS if c in have]
         )
         for col, dtype in OPTIONAL_COLUMNS.items():
             if col not in have:
                 lf = lf.with_columns(pl.lit(None, dtype=dtype).alias(col))
 
         ids = list(AIRPORTS)
-        lf = lf.filter(pl.col("PULocationID").is_in(ids) | pl.col("DOLocationID").is_in(ids))
+        lf = lf.filter(
+            pl.col("PULocationID").is_in(ids) | pl.col("DOLocationID").is_in(ids)
+        )
 
-        to_scene = (pl.col("on_scene_datetime") - pl.col("request_datetime")).dt.total_seconds()
-        at_curb = (pl.col("pickup_datetime") - pl.col("on_scene_datetime")).dt.total_seconds()
-        engaged = (pl.col("dropoff_datetime") - pl.col("request_datetime")).dt.total_seconds()
+        to_scene = (
+            pl.col("on_scene_datetime") - pl.col("request_datetime")
+        ).dt.total_seconds()
+        at_curb = (
+            pl.col("pickup_datetime") - pl.col("on_scene_datetime")
+        ).dt.total_seconds()
+        engaged = (
+            pl.col("dropoff_datetime") - pl.col("request_datetime")
+        ).dt.total_seconds()
 
         rider_total = (
             pl.col("base_passenger_fare").fill_null(0.0)
@@ -882,30 +1046,40 @@ def _(
             .with_columns(
                 pl.when(pl.col("pu_airport") == pl.col("do_airport"))
                 .then(pl.lit("internal"))
-                .when(pl.col("pu_airport").is_not_null() & pl.col("do_airport").is_not_null())
+                .when(
+                    pl.col("pu_airport").is_not_null()
+                    & pl.col("do_airport").is_not_null()
+                )
                 .then(pl.lit("transfer"))
                 .when(pl.col("pu_airport").is_not_null())
                 .then(pl.lit("pickup"))
                 .otherwise(pl.lit("dropoff"))
                 .alias("direction"),
                 pl.coalesce("pu_airport", "do_airport").alias("airport"),
-                (pl.col("driver_pay") + pl.col("tips").fill_null(0.0)).alias("driver_gross"),
+                (pl.col("driver_pay") + pl.col("tips").fill_null(0.0)).alias(
+                    "driver_gross"
+                ),
             )
             .with_columns(
-                (pl.col("driver_gross") / pl.col("rider_total_ex_tip").replace(0.0, None)).alias(
-                    "driver_share"
-                ),
-                (pl.col("base_passenger_fare") / pl.col("trip_miles").replace(0.0, None)).alias(
-                    "fare_per_mile"
-                ),
                 (
-                    pl.col("driver_gross") / (pl.col("secs_engaged") / 3600.0).replace(0.0, None)
+                    pl.col("driver_gross")
+                    / pl.col("rider_total_ex_tip").replace(0.0, None)
+                ).alias("driver_share"),
+                (
+                    pl.col("base_passenger_fare")
+                    / pl.col("trip_miles").replace(0.0, None)
+                ).alias("fare_per_mile"),
+                (
+                    pl.col("driver_gross")
+                    / (pl.col("secs_engaged") / 3600.0).replace(0.0, None)
                 ).alias("driver_gross_per_engaged_hour"),
                 (pl.col("shared_request_flag") == "Y").alias("pool_requested"),
                 (pl.col("shared_match_flag") == "Y").alias("pool_matched"),
             )
             .with_columns(
-                (pl.col("driver_share") > INCENTIVE_SHARE_THRESHOLD).alias("likely_incentive"),
+                (pl.col("driver_share") > INCENTIVE_SHARE_THRESHOLD).alias(
+                    "likely_incentive"
+                ),
                 (
                     (pl.col("base_passenger_fare") > 0)
                     & (pl.col("trip_miles") > 0)
@@ -926,7 +1100,7 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     ### 0.7 Store: 111.7 MB to 36.2 MB for each month
 
@@ -939,11 +1113,12 @@ def _():
     sort groups the categorical and time values, and saves about 13% of the file
     size.
     """)
-    return
 
 
 @app.cell
-def _(MONEY_COLS):
+def _(
+    MONEY_COLS: list[str],
+) -> tuple[int, int, int, Callable[..., pl.LazyFrame], Callable[..., Path]]:
     ZSTD_LEVEL = 9
     ROW_GROUP = 256_000
     RAW_MB_PER_MONTH = 450
@@ -1002,7 +1177,10 @@ def _(MONEY_COLS):
             pl.col("secs_request_to_scene").cast(pl.Int32),
             pl.col("secs_scene_to_pickup").cast(pl.Int32),
             *[pl.col(c).cast(pl.Float32) for c in MONEY_COLS if c in have],
-            *[pl.col(c).cast(pl.Categorical) for c in ("platform", "airport", "direction")],
+            *[
+                pl.col(c).cast(pl.Categorical)
+                for c in ("platform", "airport", "direction")
+            ],
         )
 
     def add_ratios(lf: pl.LazyFrame) -> pl.LazyFrame:
@@ -1018,18 +1196,21 @@ def _(MONEY_COLS):
         if "driver_share" in set(lf.collect_schema().names()):
             return lf
         return lf.with_columns(
-            (pl.col("driver_pay") + pl.col("tips").fill_null(0.0)).alias("driver_gross"),
+            (pl.col("driver_pay") + pl.col("tips").fill_null(0.0)).alias(
+                "driver_gross"
+            ),
             rider_total_expr().alias("rider_total_ex_tip"),
         ).with_columns(
-            (pl.col("driver_gross") / pl.col("rider_total_ex_tip").replace(0.0, None)).alias(
-                "driver_share"
-            ),
-            (pl.col("base_passenger_fare") / pl.col("trip_miles").replace(0.0, None)).alias(
-                "fare_per_mile"
-            ),
-            (pl.col("driver_gross") / (pl.col("secs_engaged") / 3600.0).replace(0.0, None)).alias(
-                "driver_gross_per_engaged_hour"
-            ),
+            (
+                pl.col("driver_gross") / pl.col("rider_total_ex_tip").replace(0.0, None)
+            ).alias("driver_share"),
+            (
+                pl.col("base_passenger_fare") / pl.col("trip_miles").replace(0.0, None)
+            ).alias("fare_per_mile"),
+            (
+                pl.col("driver_gross")
+                / (pl.col("secs_engaged") / 3600.0).replace(0.0, None)
+            ).alias("driver_gross_per_engaged_hour"),
         )
 
     def write_slim(lf: pl.LazyFrame, path: Path) -> Path:
@@ -1046,7 +1227,10 @@ def _(MONEY_COLS):
             slim_for_storage(lf)
             .sort("airport", "pickup_datetime")
             .sink_parquet(
-                path, compression="zstd", compression_level=ZSTD_LEVEL, row_group_size=ROW_GROUP
+                path,
+                compression="zstd",
+                compression_level=ZSTD_LEVEL,
+                row_group_size=ROW_GROUP,
             )
         )
         return path
@@ -1061,7 +1245,7 @@ def _(MONEY_COLS):
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     ### 0.8 Build
 
@@ -1074,21 +1258,24 @@ def _():
     A month that fails goes to the log, and the loop continues. One bad file cannot
     stop an 89-month run.
     """)
-    return
 
 
 @app.cell
 def _(
-    ARCHIVE_START,
-    OUT_GLOB,
-    PATHS,
-    add_ratios,
-    fetch_month,
-    latest_available_month,
-    months,
-    scan_airport_trips,
-    write_slim,
-):
+    ARCHIVE_START: tuple[int, int],
+    OUT_GLOB: str,
+    PATHS: Any,
+    add_ratios: Callable[..., pl.LazyFrame],
+    fetch_month: Callable[..., Any],
+    latest_available_month: Callable[..., tuple[int, int]],
+    months: Callable[..., list[tuple[int, int]]],
+    scan_airport_trips: Callable[..., pl.LazyFrame],
+    write_slim: Callable[..., Path],
+) -> tuple[
+    Callable[..., list[Path]],
+    Callable[..., dict[str, float]],
+    Callable[..., pl.LazyFrame],
+]:
     def build_month(
         year: int,
         month: int,
@@ -1141,7 +1328,9 @@ def _(
         """
         end = end or latest_available_month()
         plan = months(start, end)
-        log.info("building %d month(s): %d-%02d to %d-%02d", len(plan), *plan[0], *plan[-1])
+        log.info(
+            "building %d month(s): %d-%02d to %d-%02d", len(plan), *plan[0], *plan[-1]
+        )
 
         built: list[Path] = []
         for index, (year, month) in enumerate(plan, start=1):
@@ -1157,8 +1346,8 @@ def _(
                 )
             except FileNotFoundError as exc:
                 log.warning("skip: %s", exc)
-            except Exception as exc:
-                log.error("FAILED %d-%02d: %s", year, month, exc)
+            except Exception:
+                log.exception("FAILED %d-%02d", year, month)
             if on_month:
                 on_month(year, month, index, len(plan))
         return built
@@ -1171,9 +1360,19 @@ def _(
         """
 
         def megabytes(directory: Path) -> float:
+            """Total the size of every file in one directory.
+
+            Args:
+                directory: Directory to measure.
+
+            Returns:
+                The size in megabytes.
+            """
             if not directory.exists():
                 return 0.0
-            return sum(f.stat().st_size for f in directory.glob("*") if f.is_file()) / 1e6
+            return (
+                sum(f.stat().st_size for f in directory.glob("*") if f.is_file()) / 1e6
+            )
 
         return {
             "raw_mb": megabytes(PATHS.raw),
@@ -1195,13 +1394,15 @@ def _(
             float_cast="upcast",
             integer_cast="upcast",
         )
-        return add_ratios(pl.scan_parquet(str(PATHS.processed / pattern), cast_options=cast))
+        return add_ratios(
+            pl.scan_parquet(str(PATHS.processed / pattern), cast_options=cast)
+        )
 
     return build_archive, disk_usage, load_all
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     ### 0.9 Aggregates
 
@@ -1212,11 +1413,16 @@ def _():
     percent. Those small columns carry the entries, the exits and the concentration,
     so the duopoly of today reads as a stage rather than a fact.
     """)
-    return
 
 
 @app.cell
-def _(AGGREGATE_TABLES, MONTH_GRAIN, PATHS, ZSTD_LEVEL, load_all):
+def _(
+    AGGREGATE_TABLES: tuple[str, ...],
+    MONTH_GRAIN: str,
+    PATHS: Any,
+    ZSTD_LEVEL: int,
+    load_all: Callable[..., pl.LazyFrame],
+) -> tuple[Callable[..., dict[str, Path]]]:
     def coverage_timeline(lf: pl.LazyFrame) -> pl.LazyFrame:
         """Report on-scene reporting coverage by month and platform.
 
@@ -1227,7 +1433,9 @@ def _(AGGREGATE_TABLES, MONTH_GRAIN, PATHS, ZSTD_LEVEL, load_all):
             Trips and the share of them carrying an on-scene timestamp.
         """
         return (
-            lf.with_columns(pl.col("pickup_datetime").dt.truncate(MONTH_GRAIN).alias("month"))
+            lf.with_columns(
+                pl.col("pickup_datetime").dt.truncate(MONTH_GRAIN).alias("month")
+            )
             .group_by("month", "platform")
             .agg(
                 pl.len().alias("trips"),
@@ -1268,9 +1476,9 @@ def _(AGGREGATE_TABLES, MONTH_GRAIN, PATHS, ZSTD_LEVEL, load_all):
                 pl.col("has_on_scene").mean().alias("curb_wait_coverage"),
             )
             .with_columns(
-                (pl.col("trips") / pl.col("trips").sum().over("airport", "platform")).alias(
-                    "share_of_day"
-                )
+                (
+                    pl.col("trips") / pl.col("trips").sum().over("airport", "platform")
+                ).alias("share_of_day")
             )
             .sort("airport", "platform", "hour")
         )
@@ -1289,7 +1497,9 @@ def _(AGGREGATE_TABLES, MONTH_GRAIN, PATHS, ZSTD_LEVEL, load_all):
             lf = lf.filter(pl.col("is_valid"))
         gap = pl.col("driver_gross") - pl.col("rider_total_ex_tip")
         return (
-            lf.with_columns(pl.col("pickup_datetime").dt.truncate(MONTH_GRAIN).alias("month"))
+            lf.with_columns(
+                pl.col("pickup_datetime").dt.truncate(MONTH_GRAIN).alias("month")
+            )
             .group_by("month", "airport", "platform", "direction")
             .agg(
                 pl.len().alias("trips"),
@@ -1302,7 +1512,9 @@ def _(AGGREGATE_TABLES, MONTH_GRAIN, PATHS, ZSTD_LEVEL, load_all):
                 .median()
                 .alias("med_share_when_incentivised"),
             )
-            .with_columns((pl.col("total_topup") / pl.col("trips")).alias("topup_per_trip"))
+            .with_columns(
+                (pl.col("total_topup") / pl.col("trips")).alias("topup_per_trip")
+            )
             .sort("month", "airport", "platform", "direction")
         )
 
@@ -1319,7 +1531,9 @@ def _(AGGREGATE_TABLES, MONTH_GRAIN, PATHS, ZSTD_LEVEL, load_all):
         if valid_only:
             lf = lf.filter(pl.col("is_valid"))
         return (
-            lf.with_columns(pl.col("pickup_datetime").dt.truncate(MONTH_GRAIN).alias("month"))
+            lf.with_columns(
+                pl.col("pickup_datetime").dt.truncate(MONTH_GRAIN).alias("month")
+            )
             .group_by("month", "airport", "platform", "direction")
             .agg(
                 pl.len().alias("trips"),
@@ -1336,7 +1550,8 @@ def _(AGGREGATE_TABLES, MONTH_GRAIN, PATHS, ZSTD_LEVEL, load_all):
                 pl.col("trip_miles").median().alias("med_miles"),
                 pl.col("pool_requested").mean().alias("pool_request_rate"),
                 (
-                    pl.col("pool_matched").sum() / pl.col("pool_requested").sum().replace(0, None)
+                    pl.col("pool_matched").sum()
+                    / pl.col("pool_requested").sum().replace(0, None)
                 ).alias("pool_match_rate"),
                 pl.col("likely_incentive").mean().alias("incentive_rate"),
                 pl.col("tips").mean().alias("mean_tip"),
@@ -1378,11 +1593,15 @@ def _(AGGREGATE_TABLES, MONTH_GRAIN, PATHS, ZSTD_LEVEL, load_all):
             Trips and share per month, airport and platform, across all licensees.
         """
         return (
-            lf.with_columns(pl.col("pickup_datetime").dt.truncate(MONTH_GRAIN).alias("month"))
+            lf.with_columns(
+                pl.col("pickup_datetime").dt.truncate(MONTH_GRAIN).alias("month")
+            )
             .group_by("month", "airport", "platform")
             .agg(pl.len().alias("trips"))
             .with_columns(
-                (pl.col("trips") / pl.col("trips").sum().over("month", "airport")).alias("share")
+                (
+                    pl.col("trips") / pl.col("trips").sum().over("month", "airport")
+                ).alias("share")
             )
             .sort("month", "airport", "platform")
         )
@@ -1419,7 +1638,7 @@ def _(AGGREGATE_TABLES, MONTH_GRAIN, PATHS, ZSTD_LEVEL, load_all):
             "coverage_timeline": coverage_timeline(lf),
             "data_quality": data_quality(lf),
         }
-        assert set(queries) == set(AGGREGATE_TABLES), (
+        assert set(queries) == set(AGGREGATE_TABLES), (  # noqa: S101
             f"aggregate mismatch: {sorted(set(queries) ^ set(AGGREGATE_TABLES))}"
         )
 
@@ -1435,7 +1654,9 @@ def _(AGGREGATE_TABLES, MONTH_GRAIN, PATHS, ZSTD_LEVEL, load_all):
             if fmt == "json":
                 frame.write_json(path)
             else:
-                frame.write_parquet(path, compression="zstd", compression_level=ZSTD_LEVEL)
+                frame.write_parquet(
+                    path, compression="zstd", compression_level=ZSTD_LEVEL
+                )
             written[label] = path
         return written
 
@@ -1443,7 +1664,7 @@ def _(AGGREGATE_TABLES, MONTH_GRAIN, PATHS, ZSTD_LEVEL, load_all):
 
 
 @app.cell
-def _():
+def _() -> tuple[Callable[..., Any]]:
     LOG_PANEL_INDEX = 1
     LOG_PANEL_LINES = 14
 
@@ -1457,11 +1678,18 @@ def _():
         """
 
         def __init__(self, index: int, keep: int = LOG_PANEL_LINES) -> None:
+            """Build the handler for one output slot.
+
+            Args:
+                index: Position of the panel in the output of the running cell.
+                keep: Number of recent lines to show.
+            """
             super().__init__()
             self.index = index
             self.keep = keep
             self.lines: list[str] = []
 
+        @override
         def emit(self, record: logging.LogRecord) -> None:
             """Add one record to the panel and redraw it.
 
@@ -1481,7 +1709,7 @@ def _():
             return mo.md(f"```text\n{recent}\n```")
 
     @contextmanager
-    def log_panel(index: int = LOG_PANEL_INDEX) -> Iterator[OutputLogHandler]:
+    def log_panel(index: int = LOG_PANEL_INDEX) -> Generator[OutputLogHandler]:
         """Show the log below the progress bar for the length of one run.
 
         The progress bar takes the first output slot of the cell and updates
@@ -1509,7 +1737,7 @@ def _():
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     ### 0.10 Run
 
@@ -1539,15 +1767,18 @@ def _():
     The same lines go to the standard logger, so a run from the command line shows the
     progress in the terminal.
     """)
-    return
 
 
 @app.cell
-def _():
+def _() -> tuple[
+    mo.ui.text, mo.ui.text, mo.ui.checkbox, mo.ui.checkbox, mo.ui.run_button
+]:
     build_from = mo.ui.text(value="", label="From (YYYY-MM, blank = 2019-02)")
     build_to = mo.ui.text(value="", label="To (YYYY-MM, blank = newest published)")
     keep_raw = mo.ui.checkbox(value=False, label="Keep the ~450 MB source files")
-    refresh_aggregates = mo.ui.checkbox(value=True, label="Rebuild the aggregates afterwards")
+    refresh_aggregates = mo.ui.checkbox(
+        value=True, label="Rebuild the aggregates afterwards"
+    )
     run_extraction = mo.ui.run_button(
         label="Fetch and build",
         kind="danger",
@@ -1559,27 +1790,34 @@ def _():
 
 @app.cell
 def _(
-    ARCHIVE_START,
-    PATHS,
-    RAW_MB_PER_MONTH,
-    SLICE_MB_PER_MONTH,
-    build_from,
-    build_to,
-    latest_available_month,
-    months,
-    parse_ym,
-):
+    ARCHIVE_START: tuple[int, int],
+    PATHS: Any,
+    RAW_MB_PER_MONTH: int,
+    SLICE_MB_PER_MONTH: int,
+    build_from: mo.ui.text,
+    build_to: mo.ui.text,
+    latest_available_month: Callable[..., tuple[int, int]],
+    months: Callable[..., list[tuple[int, int]]],
+    parse_ym: Callable[..., tuple[int, int]],
+) -> tuple[list[tuple[int, int]], str | None, list[tuple[int, int]]]:
     plan: list[tuple[int, int]] = []
     plan_error: str | None = None
     try:
-        _start = parse_ym(build_from.value) if build_from.value.strip() else ARCHIVE_START
-        _end = parse_ym(build_to.value) if build_to.value.strip() else latest_available_month()
+        _start = (
+            parse_ym(build_from.value) if build_from.value.strip() else ARCHIVE_START
+        )
+        _end = (
+            parse_ym(build_to.value)
+            if build_to.value.strip()
+            else latest_available_month()
+        )
         plan = months(_start, _end)
         if not plan:
             plan_error = f"empty range: {_start} is after {_end}"
     except (ValueError, OSError) as exc:
         plan_error = str(exc)
 
+    LONG_BUILD_MONTHS = 12
     todo = [ym for ym in plan if not PATHS.out_file(*ym).exists()]
 
     if plan_error:
@@ -1594,24 +1832,24 @@ def _(
     Estimated download **{len(todo) * RAW_MB_PER_MONTH / 1000:.1f} GB**. The processed
     slices come to about **{len(plan) * SLICE_MB_PER_MONTH / 1000:.1f} GB**.
             """
-        ).callout(kind="warn" if len(todo) > 12 else "info")
-    _summary
+        ).callout(kind="warn" if len(todo) > LONG_BUILD_MONTHS else "info")
+    _summary  # pyright: ignore[reportUnusedExpression]
     return plan, plan_error, todo
 
 
 @app.cell
 def _(
-    build_archive,
-    disk_usage,
-    export_aggregates,
-    keep_raw,
-    log_panel,
+    build_archive: Callable[..., list[Path]],
+    disk_usage: Callable[..., dict[str, float]],
+    export_aggregates: Callable[..., dict[str, Path]],
+    keep_raw: mo.ui.checkbox,
+    log_panel: Callable[..., Any],
     plan: list[tuple[int, int]],
     plan_error: str | None,
-    refresh_aggregates,
-    run_extraction,
-    todo,
-):
+    refresh_aggregates: mo.ui.checkbox,
+    run_extraction: mo.ui.run_button,
+    todo: list[tuple[int, int]],
+) -> None:
     if run_extraction.value and plan and not plan_error:
         _steps = len(plan) + (1 if refresh_aggregates.value else 0)
         with (
@@ -1701,23 +1939,28 @@ def _(
             "the run at any time. The next run skips each completed month, so it "
             "continues from that point."
         ).callout(kind="neutral")
-    extraction_result
-    return
+    extraction_result  # pyright: ignore[reportUnusedExpression]
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     ## 1 · Helpers
 
     Three groups: reading, charts, and the derivations that replace hard-coded
     platform and airport lists.
     """)
-    return
 
 
 @app.cell
-def _(PATHS, add_ratios):
+def _(
+    PATHS: Any, add_ratios: Callable[..., pl.LazyFrame]
+) -> tuple[
+    Callable[..., pl.DataFrame],
+    Callable[..., pl.DataFrame],
+    Callable[..., pl.DataFrame],
+    Callable[..., pl.DataFrame],
+]:
     def read_table(name: str, base: Path | None = None) -> pl.DataFrame:
         """Load one exported aggregate table.
 
@@ -1733,7 +1976,9 @@ def _(PATHS, add_ratios):
         """
         path = (base or PATHS.exports) / f"{name}.parquet"
         if not path.exists():
-            raise FileNotFoundError(f"{path} not found — run the extraction in §0.10 first.")
+            raise FileNotFoundError(
+                f"{path} not found. Run the extraction in §0.10 first."
+            )
         frame = pl.read_parquet(path)
         log.info("loaded %-22s %8d rows x %2d cols", name, frame.height, frame.width)
         return frame
@@ -1753,9 +1998,13 @@ def _(PATHS, add_ratios):
         """
         path = PATHS.out_file(year, month)
         if not path.exists():
-            raise FileNotFoundError(f"{path} not found — run the extraction in §0.10 first.")
+            raise FileNotFoundError(
+                f"{path} not found. Run the extraction in §0.10 first."
+            )
         frame = add_ratios(pl.scan_parquet(path)).collect()
-        log.info("loaded %-22s %8d rows x %2d cols", path.stem, frame.height, frame.width)
+        log.info(
+            "loaded %-22s %8d rows x %2d cols", path.stem, frame.height, frame.width
+        )
         return frame
 
     def by_year(df: pl.DataFrame, month_col: str = "month") -> pl.DataFrame:
@@ -1808,7 +2057,7 @@ def _(PATHS, add_ratios):
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     ### 1.1 A theme, then four chart functions
 
@@ -1833,11 +2082,10 @@ def _():
     keeps one colour in every chart. A new entrant takes the next free colour, and no
     other platform changes.
     """)
-    return
 
 
 @app.cell
-def _():
+def _() -> tuple[mo.ui.dropdown]:
     chart_theme = mo.ui.dropdown(
         options=["Match marimo", "Light", "Dark"],
         value="Match marimo",
@@ -1858,11 +2106,36 @@ def _():
 
 
 @app.cell
-def _(GLOSSARY, chart_theme):
+def _(
+    GLOSSARY: Rows, chart_theme: mo.ui.dropdown
+) -> tuple[
+    int,
+    str,
+    dict[str, str],
+    list[str],
+    list[str],
+    Callable[..., alt.Chart],
+    Callable[..., alt.VConcatChart],
+    Callable[..., alt.Color],
+    Callable[..., alt.LayerChart],
+    Callable[..., alt.Chart],
+    Callable[..., mo.Html],
+    Callable[..., str],
+    Callable[..., mo.Html],
+    Callable[..., str],
+    Callable[..., mo.Html],
+    MarkedTable,
+    Callable[..., alt.Chart],
+    Callable[..., alt.Chart],
+    Callable[..., mo.Html],
+    Callable[..., mo.Html],
+    Callable[..., alt.TitleParams],
+    Callable[..., alt.X],
+]:
     CHART_WIDTH = 680
     CHART_HEIGHT = 300
     FONT = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, sans-serif"
-    LIGHT = {
+    LIGHT: dict[str, Any] = {
         "ink": "#1b1b1b",
         "muted": "#5f5f5f",
         "grid": "#e6e6e6",
@@ -1882,7 +2155,7 @@ def _(GLOSSARY, chart_theme):
             "#8B5E00",
         ],
     }
-    DARK = {
+    DARK: dict[str, Any] = {
         "ink": "#ececec",
         "muted": "#a6a6a6",
         "grid": "#3a3a3a",
@@ -2060,7 +2333,9 @@ def _(GLOSSARY, chart_theme):
         """
         return mo.hstack(cards, widths="equal", gap=0.75, wrap=True, align="stretch")
 
-    def link_list(items: list[tuple[str, str, str]]) -> mo.Html:
+    BARE_LIST = "list-style:none;padding-left:0;margin:0"
+
+    def link_list(items: Rows) -> mo.Html:
         """Build a list of links, each with a line that says what it is for.
 
         Args:
@@ -2075,9 +2350,7 @@ def _(GLOSSARY, chart_theme):
             f"<div style='opacity:0.7;font-size:0.85rem'>{note}</div></li>"
             for label, url, note in items
         ]
-        return mo.md(
-            "<ul style='list-style:none;padding-left:0;margin:0'>" + "".join(rows) + "</ul>"
-        )
+        return mo.md(f"<ul style='{BARE_LIST}'>" + "".join(rows) + "</ul>")
 
     def heading_anchor(heading: str) -> str:
         """Ask marimo for the id it gives a heading.
@@ -2118,7 +2391,7 @@ def _(GLOSSARY, chart_theme):
                 )
         return "".join(parts)
 
-    def glossary_list(items: list[tuple[str, str, str]]) -> mo.Html:
+    def glossary_list(items: Rows) -> mo.Html:
         """Build the glossary, with the expansion on hover and in the text.
 
         Args:
@@ -2136,11 +2409,9 @@ def _(GLOSSARY, chart_theme):
             f"<div style='opacity:0.6;font-size:0.85rem'>{note}</div></li>"
             for term, expansion, note in items
         ]
-        return mo.md(
-            "<ul style='list-style:none;padding-left:0;margin:0'>" + "".join(rows) + "</ul>"
-        )
+        return mo.md(f"<ul style='{BARE_LIST}'>" + "".join(rows) + "</ul>")
 
-    def contents_list(items: list[tuple[str, str, str]]) -> mo.Html:
+    def contents_list(items: Rows) -> mo.Html:
         """Build a numbered index that links to each section.
 
         Args:
@@ -2158,15 +2429,13 @@ def _(GLOSSARY, chart_theme):
             f"<a href='#{heading_anchor(heading)}'>{title}</a></li>"
             for number, title, heading in items
         ]
-        return mo.md(
-            "<ul style='list-style:none;padding-left:0;margin:0'>" + "".join(rows) + "</ul>"
-        )
+        return mo.md(f"<ul style='{BARE_LIST}'>" + "".join(rows) + "</ul>")
 
     def marked_table(
         df: pl.DataFrame,
-        mark: "Callable[[int, str], str]",
+        mark: Callable[[int, str], str],
         *,
-        justify: dict[str, str] | None = None,
+        justify: dict[str, Any] | None = None,
         bold_columns: tuple[str, ...] = (),
     ) -> mo.ui.table:
         """Render a table whose cells carry a tint that the data decides.
@@ -2237,7 +2506,9 @@ def _(GLOSSARY, chart_theme):
         if kind == "year":
             return alt.X(f"{field}:O", title=title)
         if kind == "hour":
-            return alt.X(f"{field}:O", title=title, axis=alt.Axis(values=list(range(0, 24, 2))))
+            return alt.X(
+                f"{field}:O", title=title, axis=alt.Axis(values=list(range(0, 24, 2)))
+            )
         if kind == "calendar":
             return alt.X(f"{field}:O", title=title, sort=MONTH_ORDER)
         raise ValueError(f"unknown x kind {kind!r}")
@@ -2298,7 +2569,7 @@ def _(GLOSSARY, chart_theme):
         Returns:
             The chart.
         """
-        encodings: dict[str, object] = {
+        encodings: dict[str, Any] = {
             "x": x_encoding(x, x_kind, x_title),
             "y": alt.Y(
                 f"{y}:Q",
@@ -2327,7 +2598,7 @@ def _(GLOSSARY, chart_theme):
         domain: list[str],
         subtitle: str | None = None,
         y_format: str | None = None,
-        stack: str | bool = True,
+        stack: Any = True,
         height: int = CHART_HEIGHT,
     ) -> alt.Chart:
         """Draw a stacked area chart over months.
@@ -2411,7 +2682,11 @@ def _(GLOSSARY, chart_theme):
                         gradientLength=CHART_WIDTH / 2,
                     ),
                 ),
-                tooltip=[f"{y}:N", f"{x}:O", alt.Tooltip(f"{value}:Q", format=value_format)],
+                tooltip=[
+                    f"{y}:N",
+                    f"{x}:O",
+                    alt.Tooltip(f"{value}:Q", format=value_format),
+                ],
             )
             .properties(width=CHART_WIDTH, height=height, title=titled(title))
         )
@@ -2555,7 +2830,7 @@ def _(GLOSSARY, chart_theme):
             The three layers, in one chart.
         """
         shared = colour(colour_by, domain, colour_by.title())
-        position = {
+        position: dict[str, Any] = {
             "x": alt.X(
                 f"{x}:Q",
                 title=x_title,
@@ -2569,19 +2844,27 @@ def _(GLOSSARY, chart_theme):
                 axis=alt.Axis(format=y_format) if y_format else alt.Axis(),
             ),
         }
-        back = alt.Chart(context).mark_circle(size=22, opacity=0.14, color=FADED).encode(**position)
+        back = (
+            alt.Chart(context)
+            .mark_circle(size=22, opacity=0.14, color=FADED)
+            .encode(**position)
+        )
         fading = (
             alt.Chart(trail)
             .mark_circle(size=45)
             .encode(
                 **position,
                 color=shared,
-                opacity=alt.Opacity("weight:Q", scale=alt.Scale(range=[0.08, 0.6]), legend=None),
+                opacity=alt.Opacity(
+                    "weight:Q", scale=alt.Scale(range=[0.08, 0.6]), legend=None
+                ),
             )
         )
         head = (
             alt.Chart(current)
-            .mark_point(size=190, filled=True, opacity=0.95, stroke="white", strokeWidth=1)
+            .mark_point(
+                size=190, filled=True, opacity=0.95, stroke="white", strokeWidth=1
+            )
             .encode(
                 **position,
                 color=shared,
@@ -2597,7 +2880,7 @@ def _(GLOSSARY, chart_theme):
             alt.layer(back, fading, head)
             .properties(width=CHART_WIDTH, height=340, title=titled(title, subtitle))
             .resolve_scale(color="shared", opacity="independent")
-        )
+        )  # pyright: ignore[reportReturnType]
 
     def span_chart(
         df: pl.DataFrame,
@@ -2665,7 +2948,7 @@ def _(GLOSSARY, chart_theme):
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     ### 1.2 Derivations instead of constants
 
@@ -2683,17 +2966,25 @@ def _():
     - the lifetime record of every licensee
     - the share leader in each airport-year
     """)
-    return
 
 
 @app.cell
 def _(
-    ACTIVE_WINDOW_MONTHS,
-    MIN_DISPATCH_RATIO,
-    MIN_PLATFORM_SHARE,
-    NON_MARKET_DIRECTIONS,
-    RECENT_WINDOW_MONTHS,
-):
+    ACTIVE_WINDOW_MONTHS: int,
+    MIN_DISPATCH_RATIO: float,
+    MIN_PLATFORM_SHARE: float,
+    NON_MARKET_DIRECTIONS: list[str],
+    RECENT_WINDOW_MONTHS: int,
+) -> tuple[
+    Callable[..., list[str]],
+    Callable[..., list[str]],
+    Callable[..., pl.DataFrame],
+    Callable[..., pl.DataFrame],
+    Callable[..., str],
+    Callable[..., str],
+    Callable[..., pl.DataFrame],
+    Callable[..., pl.DataFrame],
+]:
     def platform_census(coverage: pl.DataFrame) -> pl.DataFrame:
         """Summarise every platform that ever appears in the archive.
 
@@ -2713,7 +3004,9 @@ def _(
                 pl.col("month").max().alias("last_month"),
                 pl.col("month").n_unique().alias("months_active"),
             )
-            .with_columns((pl.col("trips") / pl.col("trips").sum()).alias("lifetime_share"))
+            .with_columns(
+                (pl.col("trips") / pl.col("trips").sum()).alias("lifetime_share")
+            )
             .sort("trips", descending=True)
             .collect()
         )
@@ -2733,7 +3026,9 @@ def _(
         Returns:
             Platform names, largest first.
         """
-        cutoff = pl.select(pl.lit(coverage["month"].max()).dt.offset_by(f"-{window}mo")).item()
+        cutoff = pl.select(
+            pl.lit(coverage["month"].max()).dt.offset_by(f"-{window}mo")
+        ).item()
         recent = coverage.lazy().filter(pl.col("month") > cutoff)
         if recent.select(pl.len()).collect().item() == 0:
             recent = coverage.lazy()
@@ -2747,7 +3042,9 @@ def _(
             .to_list()
         )
 
-    def dispatch_airports(kpis: pl.DataFrame, min_ratio: float = MIN_DISPATCH_RATIO) -> list[str]:
+    def dispatch_airports(
+        kpis: pl.DataFrame, min_ratio: float = MIN_DISPATCH_RATIO
+    ) -> list[str]:
         """Find the airports that actually take dispatched pickups.
 
         Args:
@@ -2763,19 +3060,27 @@ def _(
             .agg(pl.col("trips").sum().alias("trips"))
             .pivot(on="direction", index="airport", values="trips")
             .fill_null(0)
-            .with_columns((pl.col("pickup") / pl.col("dropoff").replace(0, None)).alias("ratio"))
+            .with_columns(
+                (pl.col("pickup") / pl.col("dropoff").replace(0, None)).alias("ratio")
+            )
             .filter(pl.col("ratio") >= min_ratio)
             .sort("airport")
             .get_column("airport")
             .to_list()
         )
 
+    HEAD_TO_HEAD = 2
     METRICS = (
         ("trips", "Airport pickups", "count", "high"),
         ("med_fare", "Median rider fare", "money", ""),
         ("med_driver_gross", "Median driver gross", "money", "high"),
         ("med_driver_share", "Driver gross / rider payment", "percent", "high"),
-        ("med_gross_per_engaged_hour", "Driver gross per engaged hour", "money", "high"),
+        (
+            "med_gross_per_engaged_hour",
+            "Driver gross per engaged hour",
+            "money",
+            "high",
+        ),
         ("med_fare_per_mile", "Rider fare per mile", "money", ""),
         ("med_miles", "Median trip distance (miles)", "number", ""),
         ("med_engaged_s", "Median engaged time (minutes)", "minutes", ""),
@@ -2812,7 +3117,7 @@ def _(
             pl.col("month")
             > pl.select(pl.lit(kpis["month"].max()).dt.offset_by(f"-{window}mo")).item()
             if window is not None
-            else pl.lit(True)
+            else pl.lit(value=True)
         )
         wide = (
             kpis.lazy()
@@ -2853,7 +3158,7 @@ def _(
             pl.col("metric").replace_strict(labels).alias("label"),
             pl.col("metric").replace_strict(better).alias("better"),
         )
-        if len(platforms) == 2:
+        if len(platforms) == HEAD_TO_HEAD:
             wide = wide.with_columns(
                 (pl.col(platforms[1]) - pl.col(platforms[0])).alias("difference")
             )
@@ -2883,7 +3188,11 @@ def _(
         )
         holder = pl.lit(None, dtype=pl.String)
         for name in platforms:
-            holder = pl.when(pl.col("target") == pl.col(name)).then(pl.lit(name)).otherwise(holder)
+            holder = (
+                pl.when(pl.col("target") == pl.col(name))
+                .then(pl.lit(name))
+                .otherwise(holder)
+            )
         return comparison.with_columns(target.alias("target")).with_columns(
             holder.alias("target_platform")
         )
@@ -2954,9 +3263,11 @@ def _(
             )
             .sort("airport", "year")
             .with_columns(
-                (pl.col("leader_share") - pl.col("runner_up_share").fill_null(0.0)).alias("gap"),
+                (
+                    pl.col("leader_share") - pl.col("runner_up_share").fill_null(0.0)
+                ).alias("gap"),
                 (pl.col("leader") != pl.col("leader").shift(1).over("airport"))
-                .fill_null(False)
+                .fill_null(value=False)
                 .alias("changed_hands"),
             )
             .collect()
@@ -2975,7 +3286,7 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     ## 2 · Loading
 
@@ -2987,13 +3298,30 @@ def _():
     `driver_share`, no `fare_per_mile` and no `driver_gross_per_engaged_hour`, because
     `slim_for_storage` removes them. Section 3 reads all three.
     """)
-    return
 
 
 @app.cell
-def _(AGGREGATE_TABLES, SAMPLE_MONTH, read_month, read_table):
+def _(
+    AGGREGATE_TABLES: tuple[str, ...],
+    SAMPLE_MONTH: tuple[int, int],
+    read_month: Callable[..., pl.DataFrame],
+    read_table: Callable[..., pl.DataFrame],
+) -> tuple[
+    pl.DataFrame,
+    pl.DataFrame,
+    pl.DataFrame,
+    pl.DataFrame,
+    pl.DataFrame,
+    pl.DataFrame,
+    pl.DataFrame,
+    dict[str, pl.DataFrame],
+]:
     tables = {name: read_table(name) for name in AGGREGATE_TABLES}
-    kpis, share, hourly = tables["monthly_kpis"], tables["market_share"], tables["hourly_profile"]
+    kpis, share, hourly = (
+        tables["monthly_kpis"],
+        tables["market_share"],
+        tables["hourly_profile"],
+    )
     incentive, coverage, quality = (
         tables["incentive_breakdown"],
         tables["coverage_timeline"],
@@ -3001,17 +3329,33 @@ def _(AGGREGATE_TABLES, SAMPLE_MONTH, read_month, read_table):
     )
 
     raw = read_month(*SAMPLE_MONTH)
-    log.info("raw month spans %s to %s", raw["pickup_datetime"].min(), raw["pickup_datetime"].max())
+    log.info(
+        "raw month spans %s to %s",
+        raw["pickup_datetime"].min(),
+        raw["pickup_datetime"].max(),
+    )
     return coverage, hourly, incentive, kpis, quality, raw, share, tables
 
 
 @app.cell(hide_code=True)
-def _(census, kpis, live_platforms, pickup_airports, share, stat_card, stat_row, tables):
+def _(
+    census: pl.DataFrame,
+    kpis: pl.DataFrame,
+    live_platforms: list[str],
+    pickup_airports: list[str],
+    share: pl.DataFrame,
+    stat_card: Callable[..., mo.Html],
+    stat_row: Callable[..., mo.Html],
+    tables: dict[str, pl.DataFrame],
+) -> None:
     mo.vstack(
         [
             stat_row(
                 [
-                    stat_card(f"{share['trips'].sum() / 1e6:,.1f}M", "Airport trips"),
+                    stat_card(
+                        f"{cast('float', share['trips'].sum()) / 1e6:,.1f}M",
+                        "Airport trips",
+                    ),
                     stat_card(
                         f"{share['month'].n_unique()}",
                         "Months",
@@ -3052,22 +3396,20 @@ def _(census, kpis, live_platforms, pickup_airports, share, stat_card, stat_row,
         ],
         gap=0.9,
     )
-    return
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     ## 3 · Analysis of the loaded data
 
     Deliberately *before* cleaning. Every number in this section is wrong in some way,
     and section 5 recomputes each one to show by how much.
     """)
-    return
 
 
 @app.cell(hide_code=True)
-def _(describe, raw):
+def _(describe: Callable[..., pl.DataFrame], raw: pl.DataFrame) -> None:
     _cols = [
         "base_passenger_fare",
         "driver_pay",
@@ -3085,11 +3427,10 @@ def _(describe, raw):
             mo.ui.table(describe(raw, _cols), selection=None, pagination=False),
         ]
     )
-    return
 
 
 @app.cell
-def _(raw):
+def _(raw: pl.DataFrame) -> tuple[pl.DataFrame]:
     naive = (
         raw.group_by("airport", "platform")
         .agg(
@@ -3109,13 +3450,12 @@ def _(raw):
 
 
 @app.cell(hide_code=True)
-def _(naive):
+def _(naive: pl.DataFrame) -> None:
     mo.ui.table(naive, selection=None, pagination=False)
-    return
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     Four problems are already visible, and none of them announce themselves:
 
@@ -3129,11 +3469,10 @@ def _():
 
     The next cell shows the third one directly.
     """)
-    return
 
 
 @app.cell(hide_code=True)
-def _(raw):
+def _(raw: pl.DataFrame) -> None:
     _dir = (
         raw.group_by("airport", "direction")
         .agg(pl.len().alias("trips"))
@@ -3146,19 +3485,17 @@ def _(raw):
             mo.ui.table(_dir, selection=None, pagination=False),
         ]
     )
-    return
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     ## 4 · Preprocessing
     """)
-    return
 
 
 @app.cell
-def _(raw):
+def _(raw: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
     _lazy = raw.lazy()
     invalid_by_platform, on_scene = pl.collect_all(
         [
@@ -3167,7 +3504,9 @@ def _(raw):
             .with_columns((pl.col("invalid") / pl.col("trips")).alias("invalid_rate"))
             .sort("trips", descending=True),
             _lazy.group_by("platform")
-            .agg(pl.len().alias("trips"), pl.col("has_on_scene").mean().alias("coverage"))
+            .agg(
+                pl.len().alias("trips"), pl.col("has_on_scene").mean().alias("coverage")
+            )
             .sort("coverage", descending=True),
         ]
     )
@@ -3184,7 +3523,7 @@ def _(raw):
 
 
 @app.cell(hide_code=True)
-def _(invalid_by_platform, marked_table):
+def _(invalid_by_platform: pl.DataFrame, marked_table: MarkedTable) -> None:
     invalid_worst = (
         invalid_by_platform["invalid_rate"] == invalid_by_platform["invalid_rate"].max()
     ).to_list()
@@ -3193,23 +3532,30 @@ def _(invalid_by_platform, marked_table):
             mo.md("**4.1 Validity, per platform**"),
             marked_table(
                 invalid_by_platform.with_columns(pl.col("invalid_rate").round(4)),
-                lambda i, c: ("worst" if invalid_worst[i] else "") if c == "invalid_rate" else "",
+                lambda i, c: (
+                    ("worst" if invalid_worst[i] else "") if c == "invalid_rate" else ""
+                ),
                 justify={"platform": "left"},
             ),
         ]
     )
-    return
 
 
 @app.cell(hide_code=True)
-def _(COVERAGE_THRESHOLD, marked_table, on_scene):
+def _(
+    COVERAGE_THRESHOLD: float, marked_table: MarkedTable, on_scene: pl.DataFrame
+) -> None:
     coverage_below = (on_scene["coverage"] < COVERAGE_THRESHOLD).to_list()
     mo.vstack(
         [
             mo.md("**4.2 On-scene coverage, per platform**"),
             marked_table(
                 on_scene.with_columns(pl.col("coverage").round(4)),
-                lambda i, c: ("behind" if coverage_below[i] else "lead") if c == "coverage" else "",
+                lambda i, c: (
+                    ("behind" if coverage_below[i] else "lead")
+                    if c == "coverage"
+                    else ""
+                ),
                 justify={"platform": "left", "trips": "right", "coverage": "right"},
             ),
             mo.md(
@@ -3220,16 +3566,19 @@ def _(COVERAGE_THRESHOLD, marked_table, on_scene):
             ).callout(kind="info"),
         ]
     )
-    return
 
 
 @app.cell(hide_code=True)
-def _(COVERAGE_THRESHOLD, marked_table, quality):
+def _(
+    COVERAGE_THRESHOLD: float, marked_table: MarkedTable, quality: pl.DataFrame
+) -> None:
     quality_view = (
         quality.with_columns(
             pl.col("on_scene_coverage").round(4), pl.col("incentive_rate").round(4)
         )
-        .with_columns((pl.col("invalid_rows") / pl.col("trips")).round(4).alias("invalid_rate"))
+        .with_columns(
+            (pl.col("invalid_rows") / pl.col("trips")).round(4).alias("invalid_rate")
+        )
         .sort("trips", descending=True)
         .select(
             "platform",
@@ -3244,7 +3593,9 @@ def _(COVERAGE_THRESHOLD, marked_table, quality):
         )
     )
     quality_faults = ("neg_to_scene", "neg_curb_wait", "nonpos_fare", "nonpos_miles")
-    quality_worst = (quality_view["invalid_rate"] == quality_view["invalid_rate"].max()).to_list()
+    quality_worst = (
+        quality_view["invalid_rate"] == quality_view["invalid_rate"].max()
+    ).to_list()
 
     def quality_mark(row: int, column: str) -> str:
         """Mark the cells that record a fault or a gap in the filing.
@@ -3261,7 +3612,9 @@ def _(COVERAGE_THRESHOLD, marked_table, quality):
         if column == "invalid_rate" and quality_worst[row]:
             return "worst"
         if column == "on_scene_coverage":
-            return "behind" if quality_view[column][row] < COVERAGE_THRESHOLD else "lead"
+            return (
+                "behind" if quality_view[column][row] < COVERAGE_THRESHOLD else "lead"
+            )
         return ""
 
     mo.vstack(
@@ -3275,11 +3628,16 @@ def _(COVERAGE_THRESHOLD, marked_table, quality):
             ).callout(kind="info"),
         ]
     )
-    return
 
 
 @app.cell
-def _(active_platforms, coverage, dispatch_airports, kpis, platform_census):
+def _(
+    active_platforms: Callable[..., list[str]],
+    coverage: pl.DataFrame,
+    dispatch_airports: Callable[..., list[str]],
+    kpis: pl.DataFrame,
+    platform_census: Callable[..., pl.DataFrame],
+) -> tuple[pl.DataFrame, list[str], list[str]]:
     census = platform_census(coverage)
     live_platforms = active_platforms(coverage)
     pickup_airports = dispatch_airports(kpis)
@@ -3290,14 +3648,21 @@ def _(active_platforms, coverage, dispatch_airports, kpis, platform_census):
 
 
 @app.cell(hide_code=True)
-def _(census, live_platforms, marked_table, pickup_airports):
+def _(
+    census: pl.DataFrame,
+    live_platforms: list[str],
+    marked_table: MarkedTable,
+    pickup_airports: list[str],
+) -> None:
     census_live = census["platform"].is_in(live_platforms).to_list()
     mo.vstack(
         [
             mo.md("**4.4 Which platforms and airports, derived rather than declared**"),
             marked_table(
                 census.with_columns(pl.col("lifetime_share").round(5)),
-                lambda i, c: ("lead" if census_live[i] else "") if c == "platform" else "",
+                lambda i, c: (
+                    ("lead" if census_live[i] else "") if c == "platform" else ""
+                ),
                 justify={"platform": "left"},
             ),
             mo.md(
@@ -3308,11 +3673,15 @@ def _(census, live_platforms, marked_table, pickup_airports):
             ).callout(kind="info"),
         ]
     )
-    return
 
 
 @app.cell
-def _(NON_MARKET_DIRECTIONS, live_platforms, pickup_airports, raw):
+def _(
+    NON_MARKET_DIRECTIONS: list[str],
+    live_platforms: list[str],
+    pickup_airports: list[str],
+    raw: pl.DataFrame,
+) -> tuple[pl.DataFrame, pl.DataFrame]:
     clean = raw.filter(
         pl.col("is_valid")
         & pl.col("platform").is_in(live_platforms)
@@ -3332,7 +3701,7 @@ def _(NON_MARKET_DIRECTIONS, live_platforms, pickup_airports, raw):
 
 
 @app.cell(hide_code=True)
-def _(clean, clean_pickups, raw):
+def _(clean: pl.DataFrame, clean_pickups: pl.DataFrame, raw: pl.DataFrame) -> None:
     _steps = pl.DataFrame(
         {
             "step": [
@@ -3344,13 +3713,15 @@ def _(clean, clean_pickups, raw):
         }
     ).with_columns((pl.col("rows") / raw.height).alias("share_of_raw"))
     mo.vstack(
-        [mo.md("**4.5 The cleaned frame**"), mo.ui.table(_steps, selection=None, pagination=False)]
+        [
+            mo.md("**4.5 The cleaned frame**"),
+            mo.ui.table(_steps, selection=None, pagination=False),
+        ]
     )
-    return
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     ## 5 · Analysis after preprocessing
 
@@ -3358,11 +3729,10 @@ def _():
 
     Side by side with section 3, on identical inputs.
     """)
-    return
 
 
 @app.cell
-def _(clean, naive):
+def _(clean: pl.DataFrame, naive: pl.DataFrame) -> tuple[pl.DataFrame]:
     cleaned = (
         clean.group_by("airport", "platform")
         .agg(
@@ -3397,7 +3767,7 @@ def _(clean, naive):
 
 
 @app.cell(hide_code=True)
-def _(delta):
+def _(delta: pl.DataFrame) -> None:
     mo.vstack(
         [
             mo.md("**Before vs after**"),
@@ -3412,11 +3782,10 @@ def _(delta):
             ),
         ]
     )
-    return
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     ### 5.2 Four ways to explore
 
@@ -3442,11 +3811,10 @@ def _():
     can still attempt one call to its telemetry host on first use. Block
     `api.segment.io` to stop it.
     """)
-    return
 
 
 @app.cell
-def _(clean):
+def _(clean: pl.DataFrame) -> tuple[pl.DataFrame]:
     explore_cols = [
         "airport",
         "platform",
@@ -3471,19 +3839,25 @@ def _(clean):
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     **Manual:** the hourly incentive question, written out.
     """)
-    return
 
 
 @app.cell
-def _(explore, line_chart, pickup_airports):
+def _(
+    explore: pl.DataFrame,
+    line_chart: Callable[..., alt.Chart],
+    pickup_airports: list[str],
+) -> None:
     manual_hourly = (
         explore.filter(pl.col("direction") == "pickup")
         .group_by("airport", "hour")
-        .agg(pl.len().alias("trips"), pl.col("likely_incentive").mean().alias("incentive_rate"))
+        .agg(
+            pl.len().alias("trips"),
+            pl.col("likely_incentive").mean().alias("incentive_rate"),
+        )
         .sort("airport", "hour")
     )
     mo.ui.altair_chart(
@@ -3501,11 +3875,10 @@ def _(explore, line_chart, pickup_airports):
             y_format=".0%",
         )
     )
-    return
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     **PyGWalker:** the same frame, no expression written.
 
@@ -3513,13 +3886,12 @@ def _():
     colour. The chart above needed a group-by, an aggregation and a sort. This needs
     three drags. It also leaves no artifact for a reviewer.
     """)
-    return
 
 
 @app.cell
-def _(chart_theme, explore):
+def _(chart_theme: mo.ui.dropdown, explore: pl.DataFrame) -> tuple[Any]:
     # The privacy setting comes first. PyGWalker builds its telemetry client when
-    # the api module loads, and that client reads the configuration file once.
+    # the api module loads, and that client reads the configuration file one time.
     from pygwalker.services import config as pyg_config
 
     if pyg_config.get_config("privacy") != "offline":
@@ -3530,15 +3902,19 @@ def _(chart_theme, explore):
 
     # media follows the browser. It is the better default here, because marimo
     # reports light to Python for the system display setting.
-    walker_appearance = {"Light": "light", "Dark": "dark"}.get(chart_theme.value, "media")
+    walker_appearance = cast(
+        "Any", {"Light": "light", "Dark": "dark"}.get(chart_theme.value, "media")
+    )
 
     gwalker = walk(explore, appearance=walker_appearance, default_tab="vis")
-    gwalker
+    gwalker  # pyright: ignore[reportUnusedExpression]
     return (walker_appearance,)
 
 
 @app.cell
-def _(NON_MARKET_DIRECTIONS, kpis, live_platforms):
+def _(
+    NON_MARKET_DIRECTIONS: list[str], kpis: pl.DataFrame, live_platforms: list[str]
+) -> tuple[pl.DataFrame]:
     panel = (
         kpis.lazy()
         .filter(
@@ -3569,17 +3945,16 @@ def _(NON_MARKET_DIRECTIONS, kpis, live_platforms):
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     **PyGWalker, data profile.** The same widget, on the 89-month panel, opened on
     its data tab. Each column gets a distribution and a null count. This is the view
     that answers "what is in this table" before any chart.
     """)
-    return
 
 
 @app.cell
-def _(panel, walker_appearance):
+def _(panel: pl.DataFrame, walker_appearance: Any) -> None:
     from pygwalker.api.marimo import walk as walk_panel
 
     profiler = walk_panel(
@@ -3588,27 +3963,24 @@ def _(panel, walker_appearance):
         appearance=walker_appearance,
         default_tab="data",
     )
-    profiler
-    return
+    profiler  # pyright: ignore[reportUnusedExpression]
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     **marimo data explorer.** The panel again, in the explorer that ships with
     marimo. It needs no extra library. Pick the columns and it chooses an encoding.
     """)
-    return
 
 
 @app.cell
-def _(panel):
+def _(panel: pl.DataFrame) -> None:
     mo.ui.data_explorer(panel)
-    return
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     ### 5.3 The whole market, 89 months
 
@@ -3616,18 +3988,19 @@ def _():
     uses the full aggregates, and covers every licensee rather than the two obvious
     ones.
     """)
-    return
 
 
 @app.cell
-def _(CENSORING_FRACTION, share):
+def _(CENSORING_FRACTION: float, share: pl.DataFrame) -> tuple[Any, pl.DataFrame]:
     monthly_volume = (
         share.lazy()
         .group_by("month")
         .agg(pl.col("trips").sum().alias("trips"))
         .sort("month")
         .with_columns(
-            (pl.col("trips") < CENSORING_FRACTION * pl.col("trips").median()).alias("thin")
+            (pl.col("trips") < CENSORING_FRACTION * pl.col("trips").median()).alias(
+                "thin"
+            )
         )
         .with_columns(
             pl.col("thin")
@@ -3640,14 +4013,14 @@ def _(CENSORING_FRACTION, share):
         )
         .collect()
     )
-    MEDIAN_TRIPS = monthly_volume["trips"].median()
+    MEDIAN_TRIPS: Any = monthly_volume["trips"].median()
     CENSORED_TAIL = monthly_volume.filter("censored")["month"]
-    RELIABLE_END = monthly_volume.filter(~pl.col("censored"))["month"].max()
+    RELIABLE_END: Any = monthly_volume.filter(~pl.col("censored"))["month"].max()
 
     log.info(
         "window %s to %s (%d months), median %s trips",
-        monthly_volume["month"].min().date(),
-        monthly_volume["month"].max().date(),
+        cast("datetime", monthly_volume["month"].min()).date(),
+        cast("datetime", monthly_volume["month"].max()).date(),
         monthly_volume.height,
         f"{MEDIAN_TRIPS:,.0f}",
     )
@@ -3660,10 +4033,14 @@ def _(CENSORING_FRACTION, share):
 
 
 @app.cell(hide_code=True)
-def _(MEDIAN_TRIPS, area_chart, monthly_volume):
-    _trough = monthly_volume.filter(pl.col("trips") == monthly_volume["trips"].min()).row(
-        0, named=True
-    )
+def _(
+    MEDIAN_TRIPS: Any,
+    area_chart: Callable[..., alt.Chart],
+    monthly_volume: pl.DataFrame,
+) -> None:
+    _trough = monthly_volume.filter(
+        pl.col("trips") == monthly_volume["trips"].min()
+    ).row(0, named=True)
     _series = "Every licensee"
     _chart = area_chart(
         monthly_volume.with_columns(pl.lit(_series).alias("series")),
@@ -3689,11 +4066,15 @@ def _(MEDIAN_TRIPS, area_chart, monthly_volume):
             ).callout(kind="info"),
         ]
     )
-    return
 
 
 @app.cell
-def _(MONTH_ORDER, SEASON_FROM, line_chart, share):
+def _(
+    MONTH_ORDER: list[str],
+    SEASON_FROM: datetime,
+    line_chart: Callable[..., alt.Chart],
+    share: pl.DataFrame,
+) -> tuple[pl.DataFrame]:
     season = (
         share.filter(pl.col("month") >= SEASON_FROM)
         .group_by("month")
@@ -3706,7 +4087,9 @@ def _(MONTH_ORDER, SEASON_FROM, line_chart, share):
         .agg(pl.col("trips").mean().alias("mean_trips"))
         .with_columns(
             pl.col("month_number")
-            .replace_strict(dict(enumerate(MONTH_ORDER, start=1)), return_dtype=pl.String)
+            .replace_strict(
+                dict(enumerate(MONTH_ORDER, start=1)), return_dtype=pl.String
+            )
             .alias("calendar_month")
         )
         .sort("month_number")
@@ -3733,9 +4116,13 @@ def _(MONTH_ORDER, SEASON_FROM, line_chart, share):
 
 
 @app.cell(hide_code=True)
-def _(season):
-    _low = season.filter(pl.col("mean_trips") == season["mean_trips"].min()).row(0, named=True)
-    _high = season.filter(pl.col("mean_trips") == season["mean_trips"].max()).row(0, named=True)
+def _(season: pl.DataFrame) -> None:
+    _low = season.filter(pl.col("mean_trips") == season["mean_trips"].min()).row(
+        0, named=True
+    )
+    _high = season.filter(pl.col("mean_trips") == season["mean_trips"].max()).row(
+        0, named=True
+    )
     mo.md(
         f"The quiet month is **{_low['calendar_month']}** at "
         f"**{_low['mean_trips']:,.0f}** trips. The busy month is "
@@ -3744,21 +4131,26 @@ def _(season):
         "compares one month against the month before it reads this pattern as a change "
         "in performance. Compare each month against the same month one year earlier."
     ).callout(kind="info")
-    return
 
 
 @app.cell
-def _(RECOVERY_BASELINE_MONTH, monthly_volume):
+def _(
+    RECOVERY_BASELINE_MONTH: datetime, monthly_volume: pl.DataFrame
+) -> tuple[Any, Any, Any]:
     baseline_rows = monthly_volume.filter(pl.col("month") == RECOVERY_BASELINE_MONTH)
-    BASELINE_TRIPS = baseline_rows["trips"][0] if baseline_rows.height else None
+    BASELINE_TRIPS: Any = baseline_rows["trips"][0] if baseline_rows.height else None
     recovered = monthly_volume.filter(
-        (pl.col("month") > RECOVERY_BASELINE_MONTH) & (pl.col("trips") >= BASELINE_TRIPS)
+        (pl.col("month") > RECOVERY_BASELINE_MONTH)
+        & (pl.col("trips") >= BASELINE_TRIPS)
     )
-    RECOVERY_MONTH = recovered["month"].min() if recovered.height else None
+    RECOVERY_MONTH: Any = recovered["month"].min() if recovered.height else None
+    RECOVERY_GAP: Any = (
+        (RECOVERY_MONTH.year - RECOVERY_BASELINE_MONTH.year) * 12
+        + (RECOVERY_MONTH.month - RECOVERY_BASELINE_MONTH.month)
+        if RECOVERY_MONTH is not None
+        else None
+    )
     if RECOVERY_MONTH is not None:
-        RECOVERY_GAP = (RECOVERY_MONTH.year - RECOVERY_BASELINE_MONTH.year) * 12 + (
-            RECOVERY_MONTH.month - RECOVERY_BASELINE_MONTH.month
-        )
         log.info(
             "volume returned to the %s level in %s, after %d months",
             RECOVERY_BASELINE_MONTH.date(),
@@ -3766,13 +4158,19 @@ def _(RECOVERY_BASELINE_MONTH, monthly_volume):
             RECOVERY_GAP,
         )
     else:
-        RECOVERY_GAP = None
-        log.info("volume has not returned to the %s level", RECOVERY_BASELINE_MONTH.date())
+        log.info(
+            "volume has not returned to the %s level", RECOVERY_BASELINE_MONTH.date()
+        )
     return BASELINE_TRIPS, RECOVERY_GAP, RECOVERY_MONTH
 
 
 @app.cell(hide_code=True)
-def _(BASELINE_TRIPS, RECOVERY_BASELINE_MONTH, RECOVERY_GAP, RECOVERY_MONTH):
+def _(
+    BASELINE_TRIPS: Any,
+    RECOVERY_BASELINE_MONTH: datetime,
+    RECOVERY_GAP: Any,
+    RECOVERY_MONTH: Any,
+) -> None:
     mo.md(
         (
             f"Volume reached **{BASELINE_TRIPS:,}** trips in "
@@ -3783,21 +4181,19 @@ def _(BASELINE_TRIPS, RECOVERY_BASELINE_MONTH, RECOVERY_GAP, RECOVERY_MONTH):
         if RECOVERY_MONTH is not None
         else "Volume has not returned to the level of the last month before the collapse."
     ).callout(kind="info")
-    return
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     #### Who has ever operated here
 
     The entry-and-exit picture is the first thing a two-platform analysis throws away.
     """)
-    return
 
 
 @app.cell(hide_code=True)
-def _(census, span_chart):
+def _(census: pl.DataFrame, span_chart: Callable[..., alt.Chart]) -> None:
     _domain = census["platform"].to_list()
     mo.vstack(
         [
@@ -3823,13 +4219,16 @@ def _(census, span_chart):
             ).callout(kind="info"),
         ]
     )
-    return
 
 
 @app.cell
-def _(area_chart, census, share):
+def _(
+    area_chart: Callable[..., alt.Chart], census: pl.DataFrame, share: pl.DataFrame
+) -> tuple[list[str]]:
     share_domain = census["platform"].to_list()
-    share_all = share.group_by("month", "platform").agg(pl.col("trips").sum().alias("trips"))
+    share_all = share.group_by("month", "platform").agg(
+        pl.col("trips").sum().alias("trips")
+    )
     mo.ui.altair_chart(
         area_chart(
             share_all,
@@ -3847,7 +4246,7 @@ def _(area_chart, census, share):
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     #### Concentration
 
@@ -3857,11 +4256,10 @@ def _():
     concentrated. Computing it needs every licensee, which is why the aggregates keep
     them.
     """)
-    return
 
 
 @app.cell
-def _(line_chart, share):
+def _(line_chart: Callable[..., alt.Chart], share: pl.DataFrame) -> tuple[list[str]]:
     hhi = (
         share.group_by("month", "airport")
         .agg((pl.col("share").pow(2).sum() * 10_000).alias("hhi"))
@@ -3887,13 +4285,19 @@ def _(line_chart, share):
 
 
 @app.cell
-def _(by_year, leadership, share):
+def _(
+    by_year: Callable[..., pl.DataFrame],
+    leadership: Callable[..., pl.DataFrame],
+    share: pl.DataFrame,
+) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
     share_year = (
         by_year(share)
         .group_by("year", "airport", "platform")
         .agg(pl.col("trips").sum().alias("trips"))
         .with_columns(
-            (pl.col("trips") / pl.col("trips").sum().over("year", "airport")).alias("share")
+            (pl.col("trips") / pl.col("trips").sum().over("year", "airport")).alias(
+                "share"
+            )
         )
         .sort("year", "airport", "platform")
     )
@@ -3904,7 +4308,7 @@ def _(by_year, leadership, share):
 
 
 @app.cell(hide_code=True)
-def _(handovers, leaders):
+def _(handovers: pl.DataFrame, leaders: pl.DataFrame) -> None:
     mo.vstack(
         [
             mo.md("**Share leader by airport and year, with the runner-up gap**"),
@@ -3932,11 +4336,15 @@ def _(handovers, leaders):
             ).callout(kind="info"),
         ]
     )
-    return
 
 
 @app.cell
-def _(COVERAGE_THRESHOLD, coverage, line_chart, share_domain):
+def _(
+    COVERAGE_THRESHOLD: float,
+    coverage: pl.DataFrame,
+    line_chart: Callable[..., alt.Chart],
+    share_domain: list[str],
+) -> tuple[Any, pl.DataFrame]:
     coverage_starts = (
         coverage.lazy()
         .group_by("platform")
@@ -3949,7 +4357,7 @@ def _(COVERAGE_THRESHOLD, coverage, line_chart, share_domain):
         .sort("platform")
         .collect()
     )
-    COMPARABLE_FROM = coverage_starts["first_month"].max()
+    COMPARABLE_FROM: Any = coverage_starts["first_month"].max()
     for _row in coverage_starts.iter_rows(named=True):
         log.info(
             "on_scene %d%% coverage %-8s %s",
@@ -3977,7 +4385,7 @@ def _(COVERAGE_THRESHOLD, coverage, line_chart, share_domain):
 
 
 @app.cell(hide_code=True)
-def _(COMPARABLE_FROM, coverage_starts):
+def _(COMPARABLE_FROM: Any, coverage_starts: pl.DataFrame) -> None:
     _late = (
         coverage_starts.filter(pl.col("first_month") == COMPARABLE_FROM)
         .sort("platform")
@@ -3989,11 +4397,12 @@ def _(COMPARABLE_FROM, coverage_starts):
         f"({', '.join(_late)}). Curb wait is comparable between platforms from that month "
         "only. A rule caused the change, not a commercial decision. See §6."
     ).callout(kind="warn")
-    return
 
 
 @app.cell
-def _(kpis, live_platforms, pickup_airports):
+def _(
+    kpis: pl.DataFrame, live_platforms: list[str], pickup_airports: list[str]
+) -> tuple[pl.DataFrame]:
     pickups = kpis.filter(
         (pl.col("direction") == "pickup")
         & pl.col("platform").is_in(live_platforms)
@@ -4003,7 +4412,13 @@ def _(kpis, live_platforms, pickup_airports):
 
 
 @app.cell
-def _(by_year, line_chart, live_platforms, pickup_airports, pickups):
+def _(
+    by_year: Callable[..., pl.DataFrame],
+    line_chart: Callable[..., alt.Chart],
+    live_platforms: list[str],
+    pickup_airports: list[str],
+    pickups: pl.DataFrame,
+) -> tuple[pl.DataFrame]:
     econ_year = (
         by_year(pickups)
         .group_by("year", "airport", "platform")
@@ -4038,7 +4453,12 @@ def _(by_year, line_chart, live_platforms, pickup_airports, pickups):
 
 
 @app.cell(hide_code=True)
-def _(econ_year, line_chart, live_platforms, pickup_airports):
+def _(
+    econ_year: pl.DataFrame,
+    line_chart: Callable[..., alt.Chart],
+    live_platforms: list[str],
+    pickup_airports: list[str],
+) -> None:
     mo.vstack(
         [
             mo.ui.altair_chart(
@@ -4059,11 +4479,10 @@ def _(econ_year, line_chart, live_platforms, pickup_airports):
             for airport in pickup_airports
         ]
     )
-    return
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     #### One month, one point
 
@@ -4073,14 +4492,18 @@ def _():
 
     **Drag a rectangle across the points.** The bars below then total the pickups
     inside the selection. A region of the fare and earnings space resolves into the
-    platforms that occupy it. To clear the selection, click once outside the
+    platforms that occupy it. To clear the selection, click one time outside the
     rectangle.
     """)
-    return
 
 
 @app.cell
-def _(brush_chart, kpis, live_platforms, pickup_airports):
+def _(
+    brush_chart: Callable[..., alt.VConcatChart],
+    kpis: pl.DataFrame,
+    live_platforms: list[str],
+    pickup_airports: list[str],
+) -> tuple[pl.DataFrame]:
     fare_earnings = (
         kpis.lazy()
         .filter(
@@ -4127,7 +4550,7 @@ def _(brush_chart, kpis, live_platforms, pickup_airports):
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     #### The same points, played over time
 
@@ -4139,36 +4562,59 @@ def _():
     stops while the horizontal drift continues. That is the fare rising faster than
     the driver gross.
     """)
-    return
 
 
 @app.cell
-def _():
+def _() -> tuple[Callable[[], int], Callable[[int], None]]:
     get_frame, set_frame = mo.state(0)
     return get_frame, set_frame
 
 
 @app.cell
-def _(fare_earnings):
+def _(fare_earnings: pl.DataFrame) -> tuple[list[Any], mo.ui.refresh]:
     frame_months = fare_earnings["month"].unique().sort().to_list()
     player = mo.ui.refresh(
         options=["0.25s", "0.5s", "1s", "2s"],
         default_interval="0.5s",
         label="Play the archive",
     )
-    player
+    player  # pyright: ignore[reportUnusedExpression]
     return frame_months, player
 
 
 @app.cell
-def _(frame_months, player, set_frame):
-    player
-    set_frame(lambda index: (index + 1) % len(frame_months))
-    return
+def _(
+    frame_months: list[Any],
+    player: mo.ui.refresh,
+    set_frame: Callable[[int], None],
+) -> None:
+    player  # pyright: ignore[reportUnusedExpression]
+
+    def advance(index: int) -> int:
+        """Give the index of the next frame.
+
+        Args:
+            index: Index of the frame on screen.
+
+        Returns:
+            The next index, back to zero at the end of the archive.
+        """
+        return (index + 1) % len(frame_months)
+
+    # The setter also takes a function of the current value. The marimo type
+    # stub gives the value form only.
+    set_frame(advance)  # pyright: ignore[reportArgumentType]
 
 
 @app.cell
-def _(TRAIL_MONTHS, fare_earnings, frame_chart, frame_months, get_frame, pickup_airports):
+def _(
+    TRAIL_MONTHS: int,
+    fare_earnings: pl.DataFrame,
+    frame_chart: Callable[..., alt.LayerChart],
+    frame_months: list[Any],
+    get_frame: Callable[[], int],
+    pickup_airports: list[str],
+) -> None:
     frame_index = get_frame() % len(frame_months)
     frame_month = frame_months[frame_index]
     trail_start = frame_months[max(0, frame_index - TRAIL_MONTHS)]
@@ -4177,9 +4623,11 @@ def _(TRAIL_MONTHS, fare_earnings, frame_chart, frame_months, get_frame, pickup_
         fare_earnings.lazy()
         .filter(pl.col("month").is_between(trail_start, frame_month))
         .with_columns(
-            (1.0 - (frame_month - pl.col("month")).dt.total_days() / (31.0 * TRAIL_MONTHS)).alias(
-                "weight"
-            )
+            (
+                1.0
+                - (frame_month - pl.col("month")).dt.total_days()
+                / (31.0 * TRAIL_MONTHS)
+            ).alias("weight")
         )
         .collect()
     )
@@ -4195,12 +4643,12 @@ def _(TRAIL_MONTHS, fare_earnings, frame_chart, frame_months, get_frame, pickup_
             colour_by="airport",
             domain=pickup_airports,
             x_domain=(
-                fare_earnings["med_fare"].min() * 0.95,
-                fare_earnings["med_fare"].max() * 1.05,
+                cast("float", fare_earnings["med_fare"].min()) * 0.95,
+                cast("float", fare_earnings["med_fare"].max()) * 1.05,
             ),
             y_domain=(
-                fare_earnings["med_gross_per_engaged_hour"].min() * 0.95,
-                fare_earnings["med_gross_per_engaged_hour"].max() * 1.05,
+                cast("float", fare_earnings["med_gross_per_engaged_hour"].min()) * 0.95,
+                cast("float", fare_earnings["med_gross_per_engaged_hour"].max()) * 1.05,
             ),
             title="Where the market sat in each month",
             subtitle=(
@@ -4215,11 +4663,10 @@ def _(TRAIL_MONTHS, fare_earnings, frame_chart, frame_months, get_frame, pickup_
         chart_selection=False,
         legend_selection=False,
     )
-    return
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     #### An airport pickup is a different job from an airport dropoff
 
@@ -4228,11 +4675,15 @@ def _():
     meter earns anything. The minimum-pay floor therefore binds more often, the
     payout share is higher, and the rider tips more.
     """)
-    return
 
 
 @app.cell
-def _(NON_MARKET_DIRECTIONS, kpis, live_platforms, pickup_airports):
+def _(
+    NON_MARKET_DIRECTIONS: list[str],
+    kpis: pl.DataFrame,
+    live_platforms: list[str],
+    pickup_airports: list[str],
+) -> tuple[pl.DataFrame]:
     direction_economics = (
         kpis.filter(
             pl.col("platform").is_in(live_platforms)
@@ -4273,26 +4724,26 @@ def _(NON_MARKET_DIRECTIONS, kpis, live_platforms, pickup_airports):
 
 
 @app.cell(hide_code=True)
-def _(direction_economics, pickup_airports):
+def _(direction_economics: pl.DataFrame) -> None:
     _wide = direction_economics.pivot(
-        on="direction", index="airport", values=["payout_share", "engaged_min", "tip_rate"]
+        on="direction",
+        index="airport",
+        values=["payout_share", "engaged_min", "tip_rate"],
     )
-    _lines = []
-    for _row in _wide.iter_rows(named=True):
-        _lines.append(
-            f"At **{_row['airport']}** the pickup holds the driver "
-            f"{_row['engaged_min_pickup'] - _row['engaged_min_dropoff']:.1f} minutes longer "
-            f"than the dropoff, pays "
-            f"{100 * (_row['payout_share_pickup'] - _row['payout_share_dropoff']):.1f} points "
-            f"more of the rider payment, and tips at "
-            f"{_row['tip_rate_pickup']:.1%} against {_row['tip_rate_dropoff']:.1%}."
-        )
+    _lines = [
+        f"At **{_row['airport']}** the pickup holds the driver "
+        f"{_row['engaged_min_pickup'] - _row['engaged_min_dropoff']:.1f} minutes longer "
+        f"than the dropoff, pays "
+        f"{100 * (_row['payout_share_pickup'] - _row['payout_share_dropoff']):.1f} points "
+        f"more of the rider payment, and tips at "
+        f"{_row['tip_rate_pickup']:.1%} against {_row['tip_rate_dropoff']:.1%}."
+        for _row in _wide.iter_rows(named=True)
+    ]
     mo.md("\n\n".join(_lines)).callout(kind="info")
-    return
 
 
 @app.cell(hide_code=True)
-def _(kpis):
+def _(kpis: pl.DataFrame) -> None:
     _internal = kpis.filter(pl.col("direction") == "internal")
     _label = "internal" if _internal.height else "transfer"
     _same = (
@@ -4319,11 +4770,10 @@ def _(kpis):
             ).callout(kind="warn"),
         ]
     )
-    return
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     #### How much ground a driver covers in an hour
 
@@ -4332,11 +4782,16 @@ def _():
     engaged time includes the approach and the queue. It is the measurement that
     decides how many airport trips one driver can complete in an hour.
     """)
-    return
 
 
 @app.cell
-def _(by_year, kpis, line_chart, live_platforms, pickup_airports):
+def _(
+    by_year: Callable[..., pl.DataFrame],
+    kpis: pl.DataFrame,
+    line_chart: Callable[..., alt.Chart],
+    live_platforms: list[str],
+    pickup_airports: list[str],
+) -> tuple[pl.DataFrame]:
     speed_year = (
         by_year(
             kpis.filter(
@@ -4347,7 +4802,9 @@ def _(by_year, kpis, line_chart, live_platforms, pickup_airports):
         )
         .group_by("year", "airport")
         .agg(
-            (pl.col("med_miles").median() / (pl.col("med_engaged_s").median() / 3600)).alias("mph")
+            (
+                pl.col("med_miles").median() / (pl.col("med_engaged_s").median() / 3600)
+            ).alias("mph")
         )
         .sort("year", "airport")
     )
@@ -4370,7 +4827,7 @@ def _(by_year, kpis, line_chart, live_platforms, pickup_airports):
 
 
 @app.cell(hide_code=True)
-def _(speed_year):
+def _(speed_year: pl.DataFrame) -> None:
     _wide = speed_year.pivot(on="airport", index="year", values="mph").sort("year")
     _first = _wide.row(0, named=True)
     _last = _wide.row(-1, named=True)
@@ -4391,11 +4848,10 @@ def _(speed_year):
         "and the other did not. A network-wide claim about congestion is therefore wrong "
         "for one of the two."
     ).callout(kind="info")
-    return
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     #### The rider pays more, the driver keeps less
 
@@ -4403,11 +4859,16 @@ def _():
     stays near 13.5 miles across the archive, so a change in trip mix does not
     explain the gap.
     """)
-    return
 
 
 @app.cell
-def _(by_year, line_chart, live_platforms, pickup_airports, kpis):
+def _(
+    by_year: Callable[..., pl.DataFrame],
+    kpis: pl.DataFrame,
+    line_chart: Callable[..., alt.Chart],
+    live_platforms: list[str],
+    pickup_airports: list[str],
+) -> tuple[pl.DataFrame]:
     money_year = (
         by_year(
             kpis.filter(
@@ -4426,7 +4887,9 @@ def _(by_year, line_chart, live_platforms, pickup_airports, kpis):
     divergence = (
         money_year.unpivot(index="year", variable_name="measure", value_name="dollars")
         .with_columns(
-            (100 * pl.col("dollars") / pl.col("dollars").first().over("measure")).alias("index")
+            (100 * pl.col("dollars") / pl.col("dollars").first().over("measure")).alias(
+                "index"
+            )
         )
         .sort("year", "measure")
     )
@@ -4449,7 +4912,7 @@ def _(by_year, line_chart, live_platforms, pickup_airports, kpis):
 
 
 @app.cell(hide_code=True)
-def _(money_year):
+def _(money_year: pl.DataFrame) -> None:
     _first = money_year.row(0, named=True)
     _last = money_year.row(-1, named=True)
     _fare = _last["Median rider fare"] / _first["Median rider fare"] - 1
@@ -4464,22 +4927,25 @@ def _(money_year):
     the payout share, and it falls across the same period.
     """
     ).callout(kind="info")
-    return
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     #### Newark is a one-way airport
 
     §4.4 removes Newark from the pickup analysis by ratio, not by name. This table
     gives the ratio that the rule reads.
     """)
-    return
 
 
 @app.cell(hide_code=True)
-def _(MIN_DISPATCH_RATIO, NON_MARKET_DIRECTIONS, kpis, marked_table):
+def _(
+    MIN_DISPATCH_RATIO: float,
+    NON_MARKET_DIRECTIONS: list[str],
+    kpis: pl.DataFrame,
+    marked_table: MarkedTable,
+) -> None:
     direction_ratio = (
         kpis.filter(~pl.col("direction").is_in(NON_MARKET_DIRECTIONS))
         .group_by("airport", "direction")
@@ -4487,11 +4953,15 @@ def _(MIN_DISPATCH_RATIO, NON_MARKET_DIRECTIONS, kpis, marked_table):
         .pivot(on="direction", index="airport", values="trips")
         .fill_null(0)
         .with_columns(
-            (pl.col("pickup") / pl.col("dropoff").replace(0, None)).alias("pickups_per_dropoff")
+            (pl.col("pickup") / pl.col("dropoff").replace(0, None)).alias(
+                "pickups_per_dropoff"
+            )
         )
         .sort("pickups_per_dropoff", descending=True)
     )
-    dispatch_fails = (direction_ratio["pickups_per_dropoff"] < MIN_DISPATCH_RATIO).to_list()
+    dispatch_fails = (
+        direction_ratio["pickups_per_dropoff"] < MIN_DISPATCH_RATIO
+    ).to_list()
     mo.vstack(
         [
             marked_table(
@@ -4510,11 +4980,10 @@ def _(MIN_DISPATCH_RATIO, NON_MARKET_DIRECTIONS, kpis, marked_table):
             ).callout(kind="info"),
         ]
     )
-    return
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     #### When the airport actually works
 
@@ -4523,15 +4992,16 @@ def _():
     drivers to the airport. It separates the airports better than any money
     measurement.
     """)
-    return
 
 
 @app.cell
-def _(heat_chart, hourly):
+def _(heat_chart: Callable[..., alt.Chart], hourly: pl.DataFrame) -> None:
     hour_shape = (
         hourly.group_by("airport", "hour")
         .agg(pl.col("trips").sum().alias("trips"))
-        .with_columns((pl.col("trips") / pl.col("trips").sum().over("airport")).alias("share"))
+        .with_columns(
+            (pl.col("trips") / pl.col("trips").sum().over("airport")).alias("share")
+        )
         .sort("airport", "hour")
     )
     mo.ui.altair_chart(
@@ -4546,11 +5016,12 @@ def _(heat_chart, hourly):
             legend_title="Share of that airport's pickups",
         )
     )
-    return
 
 
 @app.cell
-def _(kpis, line_chart, live_platforms):
+def _(
+    kpis: pl.DataFrame, line_chart: Callable[..., alt.Chart], live_platforms: list[str]
+) -> None:
     pool = (
         kpis.filter(pl.col("platform").is_in(live_platforms))
         .group_by("month", "platform")
@@ -4577,20 +5048,23 @@ def _(kpis, line_chart, live_platforms):
             zero=True,
         )
     )
-    return
 
 
 @app.cell
-def _(incentive, line_chart, live_platforms):
+def _(
+    incentive: pl.DataFrame,
+    line_chart: Callable[..., alt.Chart],
+    live_platforms: list[str],
+) -> None:
     binding = (
         incentive.filter(
             (pl.col("direction") == "pickup") & pl.col("platform").is_in(live_platforms)
         )
         .group_by("month", "platform")
         .agg(
-            (pl.col("incentive_trips").sum() / pl.col("trips").sum().replace(0, None)).alias(
-                "binding_rate"
-            )
+            (
+                pl.col("incentive_trips").sum() / pl.col("trips").sum().replace(0, None)
+            ).alias("binding_rate")
         )
         .sort("month", "platform")
     )
@@ -4609,13 +5083,16 @@ def _(incentive, line_chart, live_platforms):
             zero=True,
         )
     )
-    return
 
 
 @app.cell
-def _(COMPARABLE_FROM, pickups):
+def _(COMPARABLE_FROM: Any, pickups: pl.DataFrame) -> tuple[bool, pl.DataFrame]:
+    MIN_CURB_COVERAGE = 0.8
     wait = (
-        pickups.filter((pl.col("month") >= COMPARABLE_FROM) & (pl.col("curb_wait_coverage") > 0.8))
+        pickups.filter(
+            (pl.col("month") >= COMPARABLE_FROM)
+            & (pl.col("curb_wait_coverage") > MIN_CURB_COVERAGE)
+        )
         .group_by("airport", "platform")
         .agg(
             pl.col("med_curb_wait_s").median().alias("median_wait_s"),
@@ -4635,14 +5112,16 @@ def _(COMPARABLE_FROM, pickups):
 
 
 @app.cell(hide_code=True)
-def _(ROUNDING_SUSPECT, marked_table, wait):
+def _(ROUNDING_SUSPECT: bool, marked_table: MarkedTable, wait: pl.DataFrame) -> None:
     wait_rounded = (wait["median_wait_s"] % 60 == 0).to_list()
     mo.vstack(
         [
             mo.md("**Median curb wait, comparable months only**"),
             marked_table(
                 wait,
-                lambda i, c: ("worst" if wait_rounded[i] else "") if c == "median_wait_s" else "",
+                lambda i, c: (
+                    ("worst" if wait_rounded[i] else "") if c == "median_wait_s" else ""
+                ),
                 justify={"airport": "left", "platform": "left"},
             ),
             mo.md(
@@ -4654,11 +5133,10 @@ def _(ROUNDING_SUSPECT, marked_table, wait):
             else mo.md("No rounding artifact."),
         ]
     )
-    return
 
 
 @app.cell
-def _(incentive, live_platforms):
+def _(incentive: pl.DataFrame, live_platforms: list[str]) -> tuple[pl.DataFrame]:
     inc_by_airport = (
         incentive.filter(
             (pl.col("direction") == "pickup") & pl.col("platform").is_in(live_platforms)
@@ -4680,13 +5158,20 @@ def _(incentive, live_platforms):
 
 
 @app.cell(hide_code=True)
-def _(inc_by_airport, pickup_airports):
+def _(inc_by_airport: pl.DataFrame, pickup_airports: list[str]) -> None:
     mo.vstack(
         [
             mo.md("**Minimum-pay binding rate and top-up size, dispatch airports**"),
             mo.ui.table(
                 inc_by_airport.filter(pl.col("airport").is_in(pickup_airports))
-                .select("airport", "platform", "trips", "rate", "median_topup", "topup_per_trip")
+                .select(
+                    "airport",
+                    "platform",
+                    "trips",
+                    "rate",
+                    "median_topup",
+                    "topup_per_trip",
+                )
                 .with_columns(
                     pl.col("rate").round(4),
                     pl.col("median_topup").round(2),
@@ -4697,19 +5182,17 @@ def _(inc_by_airport, pickup_airports):
             ),
         ]
     )
-    return
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     ## 6 · Conclusions
     """)
-    return
 
 
 @app.cell(hide_code=True)
-def _(COMPARABLE_FROM):
+def _(COMPARABLE_FROM: Any) -> None:
     mo.vstack(
         [
             mo.md(
@@ -4738,16 +5221,19 @@ def _(COMPARABLE_FROM):
             ).callout(kind="danger"),
         ]
     )
-    return
 
 
 @app.cell
-def _(econ_year, inc_by_airport, share_year):
-    latest_year = econ_year["year"].max()
+def _(
+    econ_year: pl.DataFrame, inc_by_airport: pl.DataFrame, share_year: pl.DataFrame
+) -> tuple[Any, pl.DataFrame]:
+    latest_year: Any = econ_year["year"].max()
     summary = (
         econ_year.filter(pl.col("year") == latest_year)
         .join(
-            share_year.filter(pl.col("year") == latest_year).select("airport", "platform", "share"),
+            share_year.filter(pl.col("year") == latest_year).select(
+                "airport", "platform", "share"
+            ),
             on=["airport", "platform"],
             how="left",
         )
@@ -4776,8 +5262,17 @@ def _(econ_year, inc_by_airport, share_year):
 
 
 @app.cell(hide_code=True)
-def _(census, hhi_domain, latest_year, leaders, live_platforms, summary):
-    _dormant = census.filter(~pl.col("platform").is_in(live_platforms))["platform"].to_list()
+def _(
+    census: pl.DataFrame,
+    hhi_domain: list[str],
+    latest_year: Any,
+    leaders: pl.DataFrame,
+    live_platforms: list[str],
+    summary: pl.DataFrame,
+) -> None:
+    _dormant = census.filter(~pl.col("platform").is_in(live_platforms))[
+        "platform"
+    ].to_list()
     _final = leaders.filter(pl.col("year") == leaders["year"].max())
     mo.vstack(
         [
@@ -4795,11 +5290,15 @@ def _(census, hhi_domain, latest_year, leaders, live_platforms, summary):
             ),
         ]
     )
-    return
 
 
 @app.cell(hide_code=True)
-def _(census, handovers, hhi_domain, live_platforms):
+def _(
+    census: pl.DataFrame,
+    handovers: pl.DataFrame,
+    hhi_domain: list[str],
+    live_platforms: list[str],
+) -> None:
     mo.md(f"""
     ### The headline finding
 
@@ -4823,11 +5322,10 @@ def _(census, handovers, hhi_domain, live_platforms):
     payout share in the record with them. That is the part of the history a
     two-platform view cannot show.
     """)
-    return
 
 
 @app.cell(hide_code=True)
-def _(RECENT_WINDOW_MONTHS, kpis):
+def _(RECENT_WINDOW_MONTHS: int, kpis: pl.DataFrame) -> None:
     mo.md(f"""
     ## 7 · Platform against platform
 
@@ -4845,11 +5343,10 @@ def _(RECENT_WINDOW_MONTHS, kpis):
     comparison: the 2024 app-lockout period, and the August 2025 change that split
     the `utilization rate` into a time part and a distance part. Airport pickups only.
     """)
-    return
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     ### 7.1 Every licensee, across the whole archive
 
@@ -4859,16 +5356,22 @@ def _():
     Read a closed platform as history. Each one ran a different airport product, and
     the numbers below are the record of it.
     """)
-    return
 
 
 @app.cell
-def _(census, compare_platforms, format_metric, kpis, marked_table, pickup_airports):
+def _(
+    census: pl.DataFrame,
+    compare_platforms: Callable[..., pl.DataFrame],
+    format_metric: Callable[..., str],
+    kpis: pl.DataFrame,
+    marked_table: MarkedTable,
+    pickup_airports: list[str],
+) -> tuple[list[str], pl.DataFrame]:
     all_platforms = census["platform"].to_list()
     lifetime = compare_platforms(kpis, all_platforms, pickup_airports, window=None)
 
     def lifetime_table(airport: str) -> mo.ui.table:
-        """Render one airport's lifetime numbers, marking the best of each row.
+        """Render one airport's lifetime numbers and mark the best of each row.
 
         Args:
             airport: Airport code.
@@ -4903,14 +5406,17 @@ def _(census, compare_platforms, format_metric, kpis, marked_table, pickup_airpo
         shown = pl.DataFrame(
             {"Measurement": frame["label"]}
             | {
-                name: [format_metric(v, k) for v, k in zip(frame[name], frame["kind"], strict=True)]
+                name: [
+                    format_metric(v, k)
+                    for v, k in zip(frame[name], frame["kind"], strict=True)
+                ]
                 for name in all_platforms
             }
         )
         return marked_table(
             shown,
             lambda i, c: "lead" if c and c == winners[i] else "",
-            justify={"Measurement": "left"} | {name: "right" for name in all_platforms},
+            justify={"Measurement": "left"} | dict.fromkeys(all_platforms, "right"),
         )
 
     mo.vstack(
@@ -4931,34 +5437,37 @@ def _(census, compare_platforms, format_metric, kpis, marked_table, pickup_airpo
 
 
 @app.cell(hide_code=True)
-def _(census, lifetime, live_platforms):
+def _(census: pl.DataFrame, live_platforms: list[str]) -> None:
     _closed = census.filter(~pl.col("platform").is_in(live_platforms))
-    _rows = []
-    for _row in _closed.iter_rows(named=True):
-        _rows.append(
-            f"**{_row['platform']}** ran for {_row['months_active']} months and ended in "
-            f"{_row['last_month']:%b %Y} with {_row['trips']:,} airport trips, "
-            f"{_row['lifetime_share']:.2%} of the archive."
-        )
+    _rows = [
+        f"**{_row['platform']}** ran for {_row['months_active']} months and ended in "
+        f"{_row['last_month']:%b %Y} with {_row['trips']:,} airport trips, "
+        f"{_row['lifetime_share']:.2%} of the archive."
+        for _row in _closed.iter_rows(named=True)
+    ]
     mo.md(
         "\n\n".join(_rows)
         + "\n\nA column of blanks means the platform never ran at that airport, or "
         "never filed the field. Compare a closed platform against the others on the "
         "measurements it did file, and read the rest as absent rather than as zero."
     ).callout(kind="info")
-    return
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     ### 7.2 The two live platforms, head to head
     """)
-    return
 
 
 @app.cell
-def _(census, compare_platforms, kpis, live_platforms, pickup_airports):
+def _(
+    census: pl.DataFrame,
+    compare_platforms: Callable[..., pl.DataFrame],
+    kpis: pl.DataFrame,
+    live_platforms: list[str],
+    pickup_airports: list[str],
+) -> tuple[list[str], pl.DataFrame]:
     duo = (
         census.lazy()
         .filter(pl.col("platform").is_in(live_platforms))
@@ -4969,12 +5478,21 @@ def _(census, compare_platforms, kpis, live_platforms, pickup_airports):
         .to_list()
     )
     scorecard = compare_platforms(kpis, duo, pickup_airports)
-    log.info("head to head: %s at %s", " against ".join(duo), ", ".join(pickup_airports))
+    log.info(
+        "head to head: %s at %s", " against ".join(duo), ", ".join(pickup_airports)
+    )
     return duo, scorecard
 
 
 @app.cell(hide_code=True)
-def _(duo, format_difference, format_metric, marked_table, pickup_airports, scorecard):
+def _(
+    duo: list[str],
+    format_difference: Callable[..., str],
+    format_metric: Callable[..., str],
+    marked_table: MarkedTable,
+    pickup_airports: list[str],
+    scorecard: pl.DataFrame,
+) -> tuple[Callable[..., Any]]:
     def scorecard_table(airport: str) -> mo.ui.table:
         """Render one airport's head-to-head numbers with the leader marked.
 
@@ -5009,10 +5527,12 @@ def _(duo, format_difference, format_metric, marked_table, pickup_airports, scor
             {
                 "Measurement": frame["label"],
                 duo[0]: [
-                    format_metric(v, k) for v, k in zip(frame[duo[0]], frame["kind"], strict=True)
+                    format_metric(v, k)
+                    for v, k in zip(frame[duo[0]], frame["kind"], strict=True)
                 ],
                 duo[1]: [
-                    format_metric(v, k) for v, k in zip(frame[duo[1]], frame["kind"], strict=True)
+                    format_metric(v, k)
+                    for v, k in zip(frame[duo[1]], frame["kind"], strict=True)
                 ],
                 "Difference": [
                     format_difference(v, k)
@@ -5042,7 +5562,7 @@ def _(duo, format_difference, format_metric, marked_table, pickup_airports, scor
 
 
 @app.cell(hide_code=True)
-def _(duo):
+def _(duo: list[str]) -> None:
     mo.md(
         f"The difference column is **{duo[1]} minus {duo[0]}**. A positive driver-side "
         "row means the second platform gives the driver more. A positive fare row means "
@@ -5050,11 +5570,17 @@ def _(duo):
         "holds the better value. A row with no green cell has no better side: a higher "
         "median fare is neither a win nor a loss on its own."
     ).callout(kind="neutral")
-    return
 
 
 @app.cell
-def _(by_year, duo, kpis, line_chart, pickup_airports, share):
+def _(
+    by_year: Callable[..., pl.DataFrame],
+    duo: list[str],
+    kpis: pl.DataFrame,
+    line_chart: Callable[..., alt.Chart],
+    pickup_airports: list[str],
+    share: pl.DataFrame,
+) -> tuple[pl.DataFrame, pl.DataFrame]:
     duo_payout = (
         by_year(
             kpis.filter(
@@ -5071,7 +5597,9 @@ def _(by_year, duo, kpis, line_chart, pickup_airports, share):
         by_year(share.filter(pl.col("airport").is_in(pickup_airports)))
         .group_by("year", "platform")
         .agg(pl.col("trips").sum().alias("trips"))
-        .with_columns((pl.col("trips") / pl.col("trips").sum().over("year")).alias("share"))
+        .with_columns(
+            (pl.col("trips") / pl.col("trips").sum().over("year")).alias("share")
+        )
         .filter(pl.col("platform").is_in(duo))
         .sort("year", "platform")
     )
@@ -5113,11 +5641,17 @@ def _(by_year, duo, kpis, line_chart, pickup_airports, share):
 
 
 @app.cell
-def _(duo, duo_payout, duo_share):
-    payout_wide = duo_payout.pivot(on="platform", index="year", values="payout_share").sort("year")
-    share_wide = duo_share.pivot(on="platform", index="year", values="share").sort("year")
+def _(
+    duo: list[str], duo_payout: pl.DataFrame, duo_share: pl.DataFrame
+) -> tuple[Any, dict[str, Any], dict[str, Any], pl.DataFrame]:
+    payout_wide = duo_payout.pivot(
+        on="platform", index="year", values="payout_share"
+    ).sort("year")
+    share_wide = duo_share.pivot(on="platform", index="year", values="share").sort(
+        "year"
+    )
     ahead = payout_wide.filter(pl.col(duo[1]) > pl.col(duo[0]))
-    PAYOUT_LEAD_FROM = ahead["year"].min() if ahead.height else None
+    PAYOUT_LEAD_FROM: Any = ahead["year"].min() if ahead.height else None
     SHARE_START = share_wide.row(0, named=True)
     SHARE_END = share_wide.row(-1, named=True)
     log.info("payout lead for %s from %s", duo[1], PAYOUT_LEAD_FROM)
@@ -5125,7 +5659,14 @@ def _(duo, duo_payout, duo_share):
 
 
 @app.cell(hide_code=True)
-def _(PAYOUT_LEAD_FROM, SHARE_END, SHARE_START, duo, payout_wide, scorecard):
+def _(
+    PAYOUT_LEAD_FROM: Any,
+    SHARE_END: dict[str, Any],
+    SHARE_START: dict[str, Any],
+    duo: list[str],
+    payout_wide: pl.DataFrame,
+    scorecard: pl.DataFrame,
+) -> None:
     _latest = payout_wide.row(-1, named=True)
     _curb = scorecard.filter(pl.col("metric") == "med_curb_wait_s")
     _pool = scorecard.filter(pl.col("metric") == "pool_request_rate")
@@ -5146,21 +5687,21 @@ def _(PAYOUT_LEAD_FROM, SHARE_END, SHARE_START, duo, payout_wide, scorecard):
 
     #### The two airports are two different products
 
-    Read the tables above one at a time. The fare, the fare for each mile and the tip differ between the airports by
-    more than they differ between the platforms. One network-wide target reads both
-    airports wrong.
+    Read the tables above one at a time. The fare, the fare for each mile and the tip
+    differ between the airports by more than they differ between the platforms. One
+    network-wide target reads both airports wrong.
 
     #### Two rows are not a service measurement
 
-    The curb wait for one platform sits on an exact minute, which is a sign of minute-level rounding. Read the direction, not
-    the size. The shared-ride request rate is near zero for one platform, so the pool
-    rows compare a live product against a closed one.
+    The curb wait for one platform sits on an exact minute, which is a sign of
+    minute-level rounding. Read the direction, not the size. The shared-ride request
+    rate is near zero for one platform, so the pool rows compare a live product
+    against a closed one.
     """)
-    return
 
 
 @app.cell(hide_code=True)
-def _(duo, quality):
+def _(duo: list[str], quality: pl.DataFrame) -> None:
     _q = quality.filter(pl.col("platform").is_in(duo)).with_columns(
         (pl.col("invalid_rows") / pl.col("trips")).alias("invalid_rate")
     )
@@ -5191,11 +5732,10 @@ def _(duo, quality):
             ).callout(kind="warn"),
         ]
     )
-    return
 
 
 @app.cell(hide_code=True)
-def _():
+def _() -> None:
     mo.md(r"""
     ## 8 · The five questions
 
@@ -5207,34 +5747,37 @@ def _():
     field that is missing, because a proxy that resembles an answer is worse than a
     gap.
     """)
-    return
 
 
 @app.cell
-def _(live_platforms):
+def _(live_platforms: list[str]) -> tuple[mo.ui.dropdown]:
     subject = mo.ui.dropdown(
         options=live_platforms,
         value=live_platforms[0],
         label="Answer the questions for",
     )
-    subject
+    subject  # pyright: ignore[reportUnusedExpression]
     return (subject,)
 
 
 @app.cell
 def _(
-    benchmark,
-    compare_platforms,
-    hourly,
-    kpis,
-    live_platforms,
-    pickup_airports,
-    subject,
-):
+    benchmark: Callable[..., pl.DataFrame],
+    compare_platforms: Callable[..., pl.DataFrame],
+    hourly: pl.DataFrame,
+    kpis: pl.DataFrame,
+    live_platforms: list[str],
+    pickup_airports: list[str],
+    subject: mo.ui.dropdown,
+) -> tuple[str, pl.DataFrame, pl.DataFrame]:
     focus = subject.value
-    scoreboard = benchmark(compare_platforms(kpis, live_platforms, pickup_airports), live_platforms)
+    scoreboard = benchmark(
+        compare_platforms(kpis, live_platforms, pickup_airports), live_platforms
+    )
     focus_hours = (
-        hourly.filter((pl.col("platform") == focus) & pl.col("airport").is_in(pickup_airports))
+        hourly.filter(
+            (pl.col("platform") == focus) & pl.col("airport").is_in(pickup_airports)
+        )
         .select("airport", "hour", "trips", "share_of_day", "incentive_rate")
         .sort("airport", "hour")
     )
@@ -5243,7 +5786,16 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(focus, format_metric, live_platforms, marked_table, pickup_airports, scoreboard):
+def _(
+    focus: str,
+    format_metric: Callable[..., str],
+    live_platforms: list[str],
+    marked_table: MarkedTable,
+    pickup_airports: list[str],
+    scoreboard: pl.DataFrame,
+) -> tuple[Callable[..., Any], Callable[..., Any]]:
+    ZERO_GAP = 1e-9
+
     def target_rows(airport: str) -> tuple[pl.DataFrame, list[str]]:
         """Build one airport's target table and mark each row.
 
@@ -5266,10 +5818,12 @@ def _(focus, format_metric, live_platforms, marked_table, pickup_airports, score
                 .alias("gap")
             )
             .with_columns(
-                (pl.col("gap").abs() / pl.col("target").abs().replace(0, None)).alias("relative")
+                (pl.col("gap").abs() / pl.col("target").abs().replace(0, None)).alias(
+                    "relative"
+                )
             )
             .with_columns(
-                pl.when(pl.col("gap").abs() < 1e-9)
+                pl.when(pl.col("gap").abs() < ZERO_GAP)
                 .then(pl.lit("lead"))
                 .when(pl.col("relative") == pl.col("relative").max())
                 .then(pl.lit("worst"))
@@ -5282,14 +5836,17 @@ def _(focus, format_metric, live_platforms, marked_table, pickup_airports, score
             {
                 "Measurement": frame["label"],
                 focus: [
-                    format_metric(v, k) for v, k in zip(frame[focus], frame["kind"], strict=True)
+                    format_metric(v, k)
+                    for v, k in zip(frame[focus], frame["kind"], strict=True)
                 ],
                 "Best": [
-                    format_metric(v, k) for v, k in zip(frame["target"], frame["kind"], strict=True)
+                    format_metric(v, k)
+                    for v, k in zip(frame["target"], frame["kind"], strict=True)
                 ],
                 "Held by": frame["target_platform"].fill_null(""),
                 "Gap": [
-                    format_metric(v, k) for v, k in zip(frame["gap"], frame["kind"], strict=True)
+                    format_metric(v, k)
+                    for v, k in zip(frame["gap"], frame["kind"], strict=True)
                 ],
             }
         )
@@ -5307,7 +5864,7 @@ def _(focus, format_metric, live_platforms, marked_table, pickup_airports, score
         shown, marks = target_rows(airport)
         return marked_table(
             shown,
-            lambda i, c: marks[i],
+            lambda i, _c: marks[i],
             justify={
                 "Measurement": "left",
                 focus: "right",
@@ -5338,14 +5895,23 @@ def _(focus, format_metric, live_platforms, marked_table, pickup_airports, score
                 mo.vstack([mo.md(f"#### {airport}"), target_table(airport)])
                 for airport in pickup_airports
             ],
-            mo.md(f"Compared platforms: {', '.join(live_platforms)}.").callout(kind="neutral"),
+            mo.md(f"Compared platforms: {', '.join(live_platforms)}.").callout(
+                kind="neutral"
+            ),
         ]
     )
     return target_rows, target_table
 
 
 @app.cell(hide_code=True)
-def _(COMPARABLE_FROM, focus, focus_hours, format_metric, pickup_airports, scoreboard):
+def _(
+    COMPARABLE_FROM: Any,
+    focus: str,
+    focus_hours: pl.DataFrame,
+    format_metric: Callable[..., str],
+    pickup_airports: list[str],
+    scoreboard: pl.DataFrame,
+) -> None:
     def value(airport: str, metric: str) -> str:
         """Read one measurement for the selected platform.
 
@@ -5356,7 +5922,9 @@ def _(COMPARABLE_FROM, focus, focus_hours, format_metric, pickup_airports, score
         Returns:
             The formatted value.
         """
-        row = scoreboard.filter((pl.col("airport") == airport) & (pl.col("metric") == metric))
+        row = scoreboard.filter(
+            (pl.col("airport") == airport) & (pl.col("metric") == metric)
+        )
         if not row.height:
             return "not reported"
         return format_metric(row[focus][0], row["kind"][0])
@@ -5483,11 +6051,10 @@ def _(COMPARABLE_FROM, focus, focus_hours, format_metric, pickup_airports, score
         """),
         }
     )
-    return
 
 
 @app.cell(hide_code=True)
-def _(SOURCES, TOOLS, link_list):
+def _(SOURCES: Rows, TOOLS: Rows, link_list: Callable[..., mo.Html]) -> None:
     mo.vstack(
         [
             mo.md("## 9 · Sources and tools"),
@@ -5502,7 +6069,6 @@ def _(SOURCES, TOOLS, link_list):
         ],
         gap=0.7,
     )
-    return
 
 
 if __name__ == "__main__":

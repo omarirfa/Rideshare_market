@@ -1,81 +1,308 @@
 [project]
 name = "nyc-airport-ride-hail"
 version = "0.1.0"
-description = "Every high-volume for-hire trip touching JFK, LaGuardia or Newark, February 2019 onward."
-readme = "README.md"
-requires-python = ">=3.11"
-license = { text = "MIT" }
-keywords = ["marimo", "polars", "altair", "nyc", "tlc", "ride-hail"]
-
+description = "A marimo notebook over every high-volume for-hire trip at JFK, LGA and EWR."
+requires-python = ">=3.12"
 dependencies = [
-    "marimo>=0.24",
-    "polars>=1.0",
     "altair>=5.0",
-    "pyarrow>=15.0",
+    "marimo>=0.14",
+    "orjson>=3.10",
+    "polars>=1.0",
     "pygwalker>=0.5",
-    "requests>=2.31",
-    "orjson>=3.9",
+    "requests>=2.32",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "ruff>=0.16",
-    "pre-commit>=3.5",
+[dependency-groups]
+dev-dependencies = [
+    "bandit[toml]",
+    "commitizen",
+    "pre-commit",
+    "pyright",
+    "ruff",
+    "yamlfix",
+    "yamllint",
 ]
 
-[project.urls]
-"Trip records" = "https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page"
-"Data dictionary" = "https://www.nyc.gov/assets/tlc/downloads/pdf/data_dictionary_trip_records_hvfhs.pdf"
+# ── Ruff ────────────────────────────────────────────────────────────────────
 
 [tool.ruff]
-line-length = 100
-target-version = "py311"
+builtins = [
+    "spark",
+    "dbutils",
+    "display",
+    "displayHTML",
+    "table",
+    "_sqldf",
+    "dlt"
+]
+line-length = 88
+indent-width = 4
+target-version = "py312"
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".ipynb_checkpoints",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pyenv",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    ".vscode",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "site-packages",
+    "venv",
+    # Demo fixtures are inputs, not project source. A sample .py file is there
+    # to be counted or parsed, and linting it fails on rules that make no sense
+    # for a fixture (INP001 for one).
+    "samples",
+    "fixtures",
+    "testdata",
+]
 
 [tool.ruff.lint]
-# DOC (pydoclint) is preview-only; explicit-preview-rules keeps every *other*
-# unstable rule off, so upgrading ruff cannot silently add new failures.
-preview = true
-explicit-preview-rules = true
 select = [
-    "E",       # pycodestyle
-    "F",       # pyflakes
-    "W",       # warnings
-    "I",       # import order
-    "UP",      # pyupgrade
-    "B",       # bugbear
-    "SIM",     # simplify
-    "D",       # pydocstyle: Google convention, configured below
-    "DOC201",  # documented Returns must exist
-    "DOC402",  # documented Yields must exist
-    "DOC501",  # raised exceptions must be documented
-    "ERA",     # commented-out code
-    "RUF",
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "B",   # bugbear
+    "I",   # isort
+    "C4",  # complexity
+    "N",   # naming conventions
+    "UP",  # pyupgrade
+    "PL",  # pylint
+    "RUF", # ruff-specific
+    "D",   # docstrings
+    "SIM", # simplifications
+    "NPY", # numpy-specific
+    "PT",  # pytest-style
+    "PD",  # pandas-specific
+    "A",   # builtins shadowing (input, id, list, type, ...)
+    "ANN", # missing type annotations
+    "ARG", # unused arguments
+    "DTZ", # naive datetimes
+    "EM",  # exception message hygiene
+    "ERA", # commented-out code
+    "FBT", # boolean trap in signatures
+    "FURB",# modernisation
+    "G",   # logging format
+    "ICN", # import naming conventions
+    "INP", # implicit namespace packages
+    "ISC", # implicit string concatenation
+    "LOG", # logging misuse
+    "PERF",# performance anti-patterns
+    "PIE", # misc lints
+    "PTH", # use pathlib over os.path
+    "RET", # return-statement hygiene
+    "RSE", # raise hygiene
+    "S",   # security (complements bandit)
+    "SLF", # private member access
+    "TID", # tidy imports
+    "TRY", # exception handling
+    "YTT", # sys.version misuse
+    "TC",  # move typing-only imports into a TYPE_CHECKING block
+    "PGH", # no blanket "# type: ignore" or bare "# noqa"
+    "FA",  # from __future__ import annotations where needed
+    "PYI", # stub-file correctness
+    "C90", # cyclomatic complexity
 ]
 ignore = [
-    "undocumented-public-init",       # the class docstring covers __init__
-    "incorrect-blank-line-before-class",
-    "multi-line-summary-second-line",
-    "line-too-long",                  # the formatter owns line length
+    "E501",    # line too long (handled by formatter)
+    "B008",    # no function calls in argument defaults (common in Flask/Dash)
+    "D203",    # one blank line before class docstring
+    "D212",    # multi-line docstring summary at first line
+    "PD010",   # allow assignment to sliced dataframe
+    "PLR0913", # too many arguments
+    "PLR0912", # too many branches
+    "PLR0915", # too many statements
+    "PLW0603", # allow global statement
+    "ANN401",  # allow explicit Any where it is genuinely needed
+    "EM101",   # string literal in exception is fine at this size
+    "EM102",   # f-string in exception is fine at this size
+    "TRY003",  # allow informative messages at the raise site
+    "TRY300",  # allow return in try rather than forced else
+    "ISC001",  # conflicts with ruff-format
+    "S603",    # subprocess call without shell is the safe form
+    "S607",    # partial executable paths are fine for well-known tools
+    "FBT001",  # boolean positional args are common in CLI entry points
+    "FBT002",  # and their defaults
 ]
+fixable = ["ALL"]
+unfixable = []
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
-# marimo cells are anonymous `def _(...)` wrappers, not API surface.
-ignore-decorators = ["app.cell", "app.function", "app.class_definition"]
-
-[tool.ruff.lint.per-file-ignores]
-# A marimo notebook has no module docstring slot, displays a cell's last
-# expression as its output, marks cell-private names with a leading underscore,
-# and carries prose containing en dashes and multiplication signs.
-"nyc_airports.py" = [
-    "undocumented-public-module",
-    "useless-expression",
-    "used-dummy-variable",
-    "ambiguous-unicode-character-string",
-    "ambiguous-unicode-character-docstring",
-    "ambiguous-unicode-character-comment",
-]
-"tools/*.py" = ["undocumented-public-module"]
 
 [tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
 docstring-code-format = true
+docstring-code-line-length = "dynamic"
+
+# ── Pyright ─────────────────────────────────────────────────────────────────
+
+[tool.pyright]
+include = ["."]
+exclude = ["**/__pycache__", ".venv", "venv", "build", "dist"]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+
+# Third-party packages used by Dash apps and notebooks (dash, plotly, marimo)
+# ship partial type information. These three rules fire on the library's shape,
+# not on our code, so strict is unusable with them on.
+reportMissingTypeStubs = false
+reportMissingModuleSource = "warning"
+reportUnknownMemberType = false
+reportUnknownArgumentType = false
+reportUnknownVariableType = false
+
+# Dash callbacks and marimo cells are registered by a decorator and never called
+# directly, so pyright reports them as unused.
+reportUnusedFunction = false
+
+# Kept ON from strict, because these catch real defects in our own code:
+#   reportMissingParameterType, reportUnknownParameterType, reportUnusedImport,
+#   reportUnusedVariable, reportOptional*, reportUnnecessaryIsInstance,
+#   reportIncompatibleMethodOverride, reportPrivateUsage.
+
+# Beyond strict:
+reportUnnecessaryTypeIgnoreComment = true
+reportImplicitOverride = true
+reportDeprecated = true
+reportPropertyTypeMismatch = true
+
+# ── Commitizen ──────────────────────────────────────────────────────────────
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.1.0"
+tag_format = "v$version"
+version_files = ["VERSION"]
+update_changelog_on_bump = true
+commit_parser = "^(?P<change_type>feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(?:\\((?P<scope>[^()\\r\\n]*)\\)|\\()?(?P<breaking>!)?:\\s(?P<message>.*)?"
+bump_pattern = "^(break|new|fix|hotfix)"
+bump_map = { break = "MAJOR", new = "MINOR", fix = "PATCH", hotfix = "PATCH" }
+change_type_order = ["BREAKING CHANGE", "feat", "fix", "refactor", "perf", "test"]
+info_path = "cz_info.txt"
+info = "Conventional Commits Spec: https://www.conventionalcommits.org/"
+style = [
+    ["qmark", "fg:#ff9d00 bold"],
+    ["question", "bold"],
+    ["answer", "fg:#ff9d00 bold"],
+    ["pointer", "fg:#ff9d00 bold"],
+    ["highlighted", "fg:#ff9d00 bold"],
+    ["selected", "fg:#cc5454"],
+    ["separator", "fg:#cc5454"],
+    ["instruction", ""],
+    ["text", ""],
+    ["disabled", "fg:#858585 italic"],
+]
+
+# ── Bandit ───────────────────────────────────────────────────────────────────
+
+[tool.bandit]
+exclude_dirs = [
+    "tests",
+    "venv",
+    ".venv",
+    "env",
+    ".git",
+]
+tests = [
+    # Code execution / injection
+    "B102",  # exec/eval usage
+    "B103",  # set bad file permissions
+    "B104",  # binding to all interfaces
+    "B105",  # hardcoded password string
+    "B106",  # hardcoded password string
+    "B107",  # hardcoded password function args
+    "B108",  # insecure temp file/directory
+    "B110",  # try-except-pass
+    "B112",  # try-except continuing on TypeError
+    # Command injection
+    "B301",  # pickle usage
+    "B302",  # marshal usage
+    "B304",  # crypt usage
+    "B305",  # cipher algorithms
+    "B306",  # mktemp usage
+    "B307",  # eval usage
+    "B601",  # paramiko calls
+    "B602",  # subprocess shell=True
+    "B604",  # any function with shell=True
+    "B605",  # start process with shell
+    "B606",  # start process with no shell
+    "B607",  # start process with partial path
+    # Data handling
+    "B609",  # Flask cookie without security flags
+    "B610",  # Django XSS
+    "B611",  # blacklisted import of telnetlib
+    # Crypto
+    "B501",  # request with no cert verification
+    "B502",  # SSL with bad version
+    "B503",  # SSL with bad defaults
+    "B504",  # SSL with no version
+    "B505",  # weak crypto
+    "B506",  # yaml.load
+    "B507",  # weak crypto keys
+]
+
+# Per-plugin severity overrides
+any_other_function_with_shell_equals_true = "medium"
+assert_used = "low"
+hardcoded_bind_all_interfaces = "medium"
+hardcoded_password_default = "low"
+hardcoded_password_funcarg = "medium"
+hardcoded_password_string = "medium"
+hardcoded_sql_expressions = "medium"
+hardcoded_tmp_directory = "medium"
+jinja2_autoescape_false = "medium"
+linux_commands_wildcard_injection = "medium"
+paramiko_calls = "medium"
+password_config_option_not_marked_secret = "medium"
+request_with_no_cert_validation = "medium"
+set_bad_file_permissions = "medium"
+subprocess_popen_with_shell_equals_true = "medium"
+subprocess_without_shell_equals_true = "medium"
+weak_cryptographic_key = "medium"
+
+[tool.bandit.try_except_pass]
+level = "low"
+check_typed_exception = false
+
+# ── yamlfix ──────────────────────────────────────────────────────────────────
+
+[tool.yamlfix]
+allow_duplicate_keys = false
+comments_min_spaces_from_content = 2
+comments_require_starting_space = true
+whitelines = 0
+comments_whitelines = 1
+section_whitelines = 0
+explicit_start = true              # adds --- at top of every yaml file
+sequence_style = "keep_style"      # flow_style | block_style | keep_style
+indent_mapping = 2
+indent_sequence = 4
+indent_offset = 2
+line_length = 88                   # matches ruff line-length
+none_representation = ""           # "" | "null" | "~"
+quote_basic_values = false
+quote_keys_and_basic_values = false
+preserve_quotes = true
