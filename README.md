@@ -291,8 +291,7 @@ standard needs the product tier on each trip.
 - [HVFHV data dictionary](https://www.nyc.gov/assets/tlc/downloads/pdf/data_dictionary_trip_records_hvfhs.pdf)
 
 
-The trip records are published by TLC as open data. This repository holds no
-trip data; the extraction downloads it from TLC's CDN at run time.
+The trip records are published by TLC as open data. This repository holds trip data from 2019 - June 2026. The extraction also downloads it from TLC's CDN at run time if required. 
 
 ## Licence
 
