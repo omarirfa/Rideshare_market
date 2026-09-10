@@ -105,6 +105,7 @@ blue boxes on the second row are what the notebook does with them.
 </picture>
 <details>
 <summary>Mermaid source</summary>
+  
 ```mermaid
 flowchart LR
     cdn([TLC open data]) -->|downloads| extract[Extraction pipeline]
@@ -133,6 +134,7 @@ platforms and which airports it may compare, and draws the charts from that.
 </picture>
 <details>
 <summary>Mermaid source</summary>
+  
 ```mermaid
 flowchart TD
     scan[scan monthly file] --> gate{airport trip?}
